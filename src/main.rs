@@ -68,7 +68,7 @@ const GAP_EXTEND: i32 = -2; // Gap extend score
 fn main() {
     env_logger::init();
     let guard = pprof::ProfilerGuard::new(100).unwrap();
-
+    println!("main run");
     let result = _main();
     if let Ok(report) = guard.report().build() {
         let file = File::create("flamegraph.svg").unwrap();
@@ -92,38 +92,41 @@ fn main() {
 
 fn _main() -> Result<(), Error> {
     println!("Welcome to phasst phase!");
+    println!("_main run");
     let params = load_params();
     //if params.long_read_bam == None && params.linked_read_bam == None && params.hic_bam == None {
     //    eprintln!("Must supply at least one bam");
     //    std::process::exit(1);
     //}
+    // check for partial output else create a dir
     if Path::new(&params.output).is_dir() {
         eprintln!("restarting from partial output in {}", params.output);
     } else {
         fs::create_dir(params.output.to_string())?;
     }
-
+    // load the fai file
     let fai = params.fasta.to_string() + ".fai";
     let fa_index_iter = fasta::Index::from_file(&fai)
         .expect(&format!("error opening fasta index: {}", fai))
         .sequences();
     let mut chroms: Vec<String> = Vec::new();
-    
     let mut starts: Vec<usize> = Vec::new();
     let mut ends: Vec<usize> = Vec::new();
+    // run the given parameters chrom start and end locs
     if let Some(chrom) = params.chrom {
         chroms.push(chrom);
         starts.push(params.start.expect("could not unwrap region start"));
         ends.push(params.end.expect("could not unwrap region end"));
-    } else {
+    }
+    // else run all the chroms and bases
+    else {
         for chrom in fa_index_iter {
             chroms.push(chrom.name.to_string());
             starts.push(0);
             ends.push(chrom.len as usize);
         }
     }
-   
-    //let vcf_reader = bcf::IndexedReader::from_path(params.vcf.to_string())?;
+    // data for each thread, 1 per chromosone
     let mut chunks: Vec<ThreadData> = Vec::new();
     for (i, chrom) in chroms.iter().enumerate() {
         //if chrom.chars().count() > 5 { continue; }
@@ -180,6 +183,7 @@ fn _main() -> Result<(), Error> {
     cmd.push("-o".to_string());
     cmd.push(final_output.to_string());
     let jobs = chunks.len();
+    // make the cmd command for concat and run phase chunk (where chunk is one chromosone)
     for data in chunks {
         cmd.push(format!("{}/phased_chrom_{}.vcf.gz", data.output, data.chrom));
         let tx = tx.clone();
@@ -193,6 +197,7 @@ fn _main() -> Result<(), Error> {
     assert_eq!(rx.iter().take(jobs).fold(0,|a,b|a+b),jobs);
     println!("after barrier");
     println!("merging final vcf");
+    // after all the threads are done, concat the contents and index
     let result = Command::new("bcftools")
         .args(&cmd)
         .status()
@@ -357,12 +362,14 @@ fn log_sum_exp64(p: &Vec<f64>) -> f64 {
     max_p + sum_rst.ln()
 }
 fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
+    // check for done file if available do nothing vcf_out -> phased_vcf_done?
     println!("checking for file {}", data.phased_vcf_done);
     if Path::new(&data.phased_vcf_done).exists() {
         println!("phasing complete for chrom {}. Delete .done or output directory if you want to rerun", data.chrom);
         return Ok(());
     } else { println!("could not find file, continuing to phasing");}
     println!("checking for file {}", data.vcf_out_done);
+    // get vaariant assignments and save it in data
     if !Path::new(&data.vcf_out_done).exists() {
         println!("could not find file, gathing variant assignments");
         get_all_variant_assignments(data).expect("we error here at get all variant assignments");
@@ -374,6 +381,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         .name2rid(data.chrom.as_bytes())
         .expect("can't get chrom rid, make sure vcf and bam and fasta contigs match!");
     let vcf_info = inspect_vcf(&mut vcf_reader, &data);
+    // initialize cluster centers how is this done?
     let (mut cluster_centers, mut molecule_support) =  init_cluster_centers(vcf_info.num_variants, &data);
     let mut window_start: usize = data.start;
     let mut window_end: usize = window_start + data.phasing_window;
@@ -387,6 +395,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
     let mut last_window_start: Option<usize> = None;
     let seed = [data.seed; 32];
     let mut rng: StdRng = SeedableRng::from_seed(seed);
+    // start expectation maximization part
     'outer: while window_start < data.end
         && window_start < vcf_info.final_position as usize
     {
@@ -400,10 +409,12 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         vcf_reader
             .fetch(chrom, window_start as u64, Some(window_end as u64))
             .expect("some actual error");
+        // get whether the variant in the window range are allele or not
         let (molecules, first_var_index, last_var_index) = get_read_molecules(&mut vcf_reader, &vcf_info, READ_TYPE::HIFI);
         let mut iteration = 0;
         let mut min_index: usize = 0;
         let mut max_index: usize = 0;
+        // initializing stuff
         let mut last_cluster_center_delta = cluster_center_delta;
         let mut last_posterior_delta = 0.0;
         info!("next window {}-{}", window_start, window_end);
@@ -416,7 +427,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
             posteriors.push(post);
         }
         while cluster_center_delta > 0.01 {
-            
+            // CONTINUE FROM HERE !!!!!!!!!!!!!!!!!!!
             let (breaking_point, _log_likelihood, posterior_delta) = expectation(&molecules, &cluster_centers, &mut posteriors);
 
             if in_phaseblock && breaking_point {
@@ -1474,6 +1485,7 @@ enum READ_TYPE {
     HIFI, HIC,
 }
 
+// get the mol which are allele or not for the reads in the window
 fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_type: READ_TYPE) -> (Vec<Vec<Allele>>, usize, usize) {
     let mut molecules: HashMap<String, Vec<Allele>> = HashMap::new();
     let ref_tag;
@@ -1589,6 +1601,7 @@ fn inspect_vcf(vcf: &mut bcf::IndexedReader, data: &ThreadData) -> VCF_info {
     }
 }
 
+// num if number of variants
 fn init_cluster_centers(num: usize, data: &ThreadData) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
     let seed = [data.seed; 32];
     let mut rng: StdRng = SeedableRng::from_seed(seed);
@@ -1612,17 +1625,21 @@ fn init_cluster_centers(num: usize, data: &ThreadData) -> (Vec<Vec<f32>>, Vec<Ve
 
 fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
     eprintln!("get all variant assignemnts");
+    // open bam
     let mut long_read_bam_reader = match &data.long_read_bam {
         Some(x) => Some(bam::IndexedReader::from_path(x).expect("could not open bam, maybe no index?")),
         None => None,
     };
+    // open hic
     let mut hic_bam_reader = match &data.hic_bam {
         Some(x) => Some(bam::IndexedReader::from_path(x).expect("could not open bam, maybe no index2?")),
         None => None,
     };
+    // open fasta
     let mut fasta = fasta::IndexedReader::from_file(&data.fasta).expect("cannot open fasta file");
-
+    // open variant file deep consensus?
     let mut vcf_reader = bcf::IndexedReader::from_path(data.vcf.to_string()).expect("could not load index for vcf... looking for .csi file");
+    // modify the header of variant file for the new file
     let header_view = vcf_reader.header();
     let mut new_header = bcf::header::Header::from_template(header_view);
     new_header.push_record(br#"##fileformat=VCFv4.2"#);
@@ -1633,7 +1650,7 @@ fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
 
     {
         // creating my own scope to close later to close vcf writer
-        eprintln!("writing vcf {} using {} as header template",data.vcf_out.to_string(), data.vcf.to_string());
+        eprintln!("writing vcf {} using {} as header template", data.vcf_out.to_string(), data.vcf.to_string());
         let mut vcf_writer =
             bcf::Writer::from_path(data.vcf_out.to_string(), &new_header, false, Format::Vcf).expect("cant open vcf writer");
         let chrom = vcf_reader.header().name2rid(data.chrom.as_bytes()).expect("could not read vcf header");
@@ -1888,6 +1905,7 @@ fn get_variant_assignments<'a>(
     }
     match long_reads {
         Some(bam) => {
+            // get the read assignment for long read for that location
             let (ref_string, alt_string) = get_read_assignments(chrom.to_string(), pos, bam, 
                 fasta, &ref_allele, &alt_allele, min_base_qual, min_mapq, window);
             vcf_record
@@ -1915,6 +1933,7 @@ fn get_variant_assignments<'a>(
     vcf_writer.write(vcf_record).expect("nope");
 }
 
+// check which of the reads align more to ref or alt, assign the reads as ref of alt
 fn get_read_assignments(
     chrom: String,
     pos: usize,
@@ -1926,10 +1945,12 @@ fn get_read_assignments(
     min_mapq: u8,
     window: usize,
 ) -> (String, String) {
+    // find the chromosone
     let tid = bam
         .header()
         .tid(chrom.as_bytes())
         .expect(&format!("cannot find chrom tid {}", chrom));
+    // search the location in bam
     bam.fetch((tid, pos as u32, (pos + 1) as u32))
         .expect("blah"); // skip to region of bam of this variant position
     let ref_start = (pos.checked_sub(window)).unwrap_or(0) as u64;
@@ -1999,6 +2020,7 @@ fn get_read_assignments(
             //);
             continue;
         }
+        // check which of the reads align more to ref or alt, assign the reads as ref of alt
         let read_start = read_start.expect("why read start is none");
         let seq = rec.seq().as_bytes()[read_start..read_end].to_vec();
         let score = |a: u8, b: u8| if a == b { MATCH } else { MISMATCH };
@@ -2162,6 +2184,7 @@ struct Params {
 }
 
 fn load_params() -> Params {
+    println!("load_params run");
     let yaml = load_yaml!("params.yml");
     let params = App::from_yaml(yaml).get_matches();
 
