@@ -1,0 +1,97 @@
+name: phuzzy phazer
+version: "1.0"
+author: Haynes Heaton <whheaton@gmail.com>
+about: Bernoulli mixture model diploid and polyploid phasing
+args:
+    - output:
+        long: output
+        short: o
+        takes_value: true
+        required: true
+        help: output directory
+    - min_mapq:
+        long: min_mapq
+        takes_value: true
+        required: false
+        default_value: "30"
+        help: minimum mapq reads to use (default 30)
+    - min_base_qual:
+        long: min_base_qual
+        takes_value: true
+        required: false
+        default_value: "20"
+        help: minimum base quality to trust (default 20)
+    - vcf:
+        long: vcf
+        short: v
+        takes_value: true
+        required: true
+        help: vcf file
+    - hic_bam:
+        long: hic_bam
+        short: h
+        required: false
+        takes_value: true
+        help: hic aligned bam
+    - long_read_bam:
+        long: long_read_bam
+        required: true
+        takes_value: true
+        help: long reads aligned bam
+    - threads:
+        short: t
+        long: threads
+        required: false
+        takes_value: true
+        default_value: "1"
+        help: max number of threads (default 1).
+    - seed:
+        short: s
+        long: seed
+        required: false
+        takes_value: true
+        default_value: "4"
+        help: random seed, default is 4, guarranteed random by dice roll https://xkcd.com/221/
+    - fasta:
+        short: f
+        long: assembly_fasta
+        required: true
+        help: assembly fasta file
+        takes_value: true
+    - ploidy:
+        short: p
+        long: ploidy
+        required: false
+        help: ploidy of organism, default 2
+        default_value: "2"
+        takes_value: true
+    - allele_alignment_window:
+        long: allele_alignment_window
+        required: false
+        takes_value: true
+        default_value: "50"
+        help: window on either side of an allele to use for alignment when determinging which allele a read supports
+    - phasing_window:
+        long: phasing_window
+        required: false
+        takes_value: true
+        default_value: "20000"
+        help: base window for phasing solution in sliding window (default 20kb)
+    - hic_phasing_posterior_threshold:
+        long: hic_phasing_posterior_threshold
+        required: false
+        takes_value: true
+        default_value: "0.9999"
+        help: confidence threshold to merge phase blocks via hic 
+    - long_switch_threshold:
+        long: long_switch_threshold
+        required: false
+        takes_value: true
+        default_value: "0.9999"
+        help: confidence threshold when testing potential break points for long switches
+    - region:
+        long: region
+        short: r
+        required: false
+        takes_value: true
+        help: region in the form of chr1:start-stop 
