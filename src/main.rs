@@ -700,7 +700,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
             //swap(cluster_centers, breakpoint, &pairing, 50); // reversing the swap
         }
         let mut best_index = 0;
-        let mut best_post = i32::MIN;
+        let mut best_post = f32::MIN;
         for (ll_index, log_likelihood) in log_likelihoods.iter().enumerate() {
             let log_bayes_denom = log_sum_exp(&log_likelihoods);
             let log_posterior = log_likelihood - log_bayes_denom;
