@@ -13,7 +13,6 @@ extern crate log;
 extern crate env_logger;
 extern crate pprof;
 
-use bio::stats::bayesian::model::Posterior;
 use log::{debug, error, log_enabled, info, trace, Level};
 
 use std::sync::mpsc::channel;
@@ -69,7 +68,7 @@ const GAP_EXTEND: i32 = -2; // Gap extend score
 fn main() {
     env_logger::init();
     let guard = pprof::ProfilerGuard::new(100).unwrap();
-    println!("main run");
+
     let result = _main();
     if let Ok(report) = guard.report().build() {
         let file = File::create("flamegraph.svg").unwrap();
@@ -93,41 +92,38 @@ fn main() {
 
 fn _main() -> Result<(), Error> {
     println!("Welcome to phasst phase!");
-    println!("_main run");
     let params = load_params();
     //if params.long_read_bam == None && params.linked_read_bam == None && params.hic_bam == None {
     //    eprintln!("Must supply at least one bam");
     //    std::process::exit(1);
     //}
-    // check for partial output else create a dir
     if Path::new(&params.output).is_dir() {
         eprintln!("restarting from partial output in {}", params.output);
     } else {
         fs::create_dir(params.output.to_string())?;
     }
-    // load the fai file
+
     let fai = params.fasta.to_string() + ".fai";
     let fa_index_iter = fasta::Index::from_file(&fai)
         .expect(&format!("error opening fasta index: {}", fai))
         .sequences();
     let mut chroms: Vec<String> = Vec::new();
+    
     let mut starts: Vec<usize> = Vec::new();
     let mut ends: Vec<usize> = Vec::new();
-    // run the given parameters chrom start and end locs
     if let Some(chrom) = params.chrom {
         chroms.push(chrom);
         starts.push(params.start.expect("could not unwrap region start"));
         ends.push(params.end.expect("could not unwrap region end"));
-    }
-    // else run all the chroms and bases
-    else {
+    } else {
         for chrom in fa_index_iter {
             chroms.push(chrom.name.to_string());
             starts.push(0);
             ends.push(chrom.len as usize);
         }
     }
-    // data for each thread, 1 per chromosone
+   
+    //let vcf_reader = bcf::IndexedReader::from_path(params.vcf.to_string())?;
     let mut chunks: Vec<ThreadData> = Vec::new();
     for (i, chrom) in chroms.iter().enumerate() {
         //if chrom.chars().count() > 5 { continue; }
@@ -184,7 +180,6 @@ fn _main() -> Result<(), Error> {
     cmd.push("-o".to_string());
     cmd.push(final_output.to_string());
     let jobs = chunks.len();
-    // make the cmd command for concat and run phase chunk (where chunk is one chromosone)
     for data in chunks {
         cmd.push(format!("{}/phased_chrom_{}.vcf.gz", data.output, data.chrom));
         let tx = tx.clone();
@@ -198,7 +193,6 @@ fn _main() -> Result<(), Error> {
     assert_eq!(rx.iter().take(jobs).fold(0,|a,b|a+b),jobs);
     println!("after barrier");
     println!("merging final vcf");
-    // after all the threads are done, concat the contents and index
     let result = Command::new("bcftools")
         .args(&cmd)
         .status()
@@ -357,20 +351,20 @@ fn log_sum_exp(p: &Vec<f32>) -> f32 {
     let sum_rst: f32 = p.iter().map(|x| (x - max_p).exp()).sum();
     max_p + sum_rst.ln()
 }
+
 fn log_sum_exp64(p: &Vec<f64>) -> f64 {
     let max_p: f64 = p.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     let sum_rst: f64 = p.iter().map(|x| (x - max_p).exp()).sum();
     max_p + sum_rst.ln()
 }
+
 fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
-    // check for done file if available do nothing vcf_out -> phased_vcf_done?
     println!("checking for file {}", data.phased_vcf_done);
     if Path::new(&data.phased_vcf_done).exists() {
         println!("phasing complete for chrom {}. Delete .done or output directory if you want to rerun", data.chrom);
         return Ok(());
     } else { println!("could not find file, continuing to phasing");}
     println!("checking for file {}", data.vcf_out_done);
-    // get vaariant assignments and save it in data
     if !Path::new(&data.vcf_out_done).exists() {
         println!("could not find file, gathing variant assignments");
         get_all_variant_assignments(data).expect("we error here at get all variant assignments");
@@ -382,7 +376,6 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         .name2rid(data.chrom.as_bytes())
         .expect("can't get chrom rid, make sure vcf and bam and fasta contigs match!");
     let vcf_info = inspect_vcf(&mut vcf_reader, &data);
-    // initialize cluster centers how is this done?
     let (mut cluster_centers, mut molecule_support) =  init_cluster_centers(vcf_info.num_variants, &data);
     let mut window_start: usize = data.start;
     let mut window_end: usize = window_start + data.phasing_window;
@@ -396,7 +389,6 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
     let mut last_window_start: Option<usize> = None;
     let seed = [data.seed; 32];
     let mut rng: StdRng = SeedableRng::from_seed(seed);
-    // start expectation maximization part
     'outer: while window_start < data.end
         && window_start < vcf_info.final_position as usize
     {
@@ -410,16 +402,13 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         vcf_reader
             .fetch(chrom, window_start as u64, Some(window_end as u64))
             .expect("some actual error");
-        // get whether the variant in the window range are allele or not
         let (molecules, first_var_index, last_var_index) = get_read_molecules(&mut vcf_reader, &vcf_info, READ_TYPE::HIFI);
         let mut iteration = 0;
         let mut min_index: usize = 0;
         let mut max_index: usize = 0;
-        // initializing stuff
         let mut last_cluster_center_delta = cluster_center_delta;
         let mut last_posterior_delta = 0.0;
         info!("next window {}-{}", window_start, window_end);
-        // posteriors just for this window
         let mut posteriors: Vec<Vec<f32>> = Vec::new();
         for moldex in molecules.iter() {
             let mut post: Vec<f32> = Vec::new();
@@ -429,21 +418,22 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
             posteriors.push(post);
         }
         while cluster_center_delta > 0.01 {
+            
             let (breaking_point, _log_likelihood, posterior_delta) = expectation(&molecules, &cluster_centers, &mut posteriors);
 
             if in_phaseblock && breaking_point {
                 in_phaseblock = false;
-                // CHANGED THIS
                 while cluster_centers[0][last_attempted_index] == cluster_centers[1][last_attempted_index] && 
                     vcf_info.variant_positions[last_attempted_index] > window_start {
                     last_attempted_index -= 1;
                 }
-                 // WE CHANGED THIS AFTER PREVIOUS TESTING
-                 if vcf_info.variant_positions[last_attempted_index] < window_start {
+
+                // WE CHANGED THIS AFTER PREVIOUS TESTING
+                if vcf_info.variant_positions[last_attempted_index] < window_start {
                     last_attempted_index += 1;
                 }
                 // END
-
+                
                 putative_phase_blocks.push(PhaseBlock{
                     id: putative_phase_blocks.len(),
                     start_index: phase_block_start,
@@ -451,16 +441,17 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
                     end_index: last_attempted_index,
                     end_position: vcf_info.variant_positions[last_attempted_index]
                 });
-                //ADDED FROM MAIN
+                
+                // WE CHANGED THIS AFTER PREVIOUS TESTING
                 phase_block_start = last_attempted_index + 1;
                 if phase_block_start >= vcf_info.variant_positions.len() {
                     break 'outer;
                 }
                 window_start = vcf_info.variant_positions[phase_block_start];
-                //END
+                // END
+                /** WE COMMENTED THIS OUT AFTER PREVIOUS TESTING
                 phase_block_start = last_attempted_index;
                 last_window_start = Some(window_start);
-
                 if let Some(previous_window_start) = last_window_start {
                     while previous_window_start >= window_start {
                         phase_block_start += 1;
@@ -477,6 +468,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
                     } // we are at the end of the region or chromosome, we are done
                     window_start = vcf_info.variant_positions[phase_block_start];
                 }
+                **/
                 eprintln!("in phaseblock but hit breakpoint, reseting window start to {}", window_start);
                 window_end = window_start + data.phasing_window;
                 for haplotype in 0..cluster_centers.len() {
@@ -561,7 +553,6 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         window_end = window_end.min(vcf_info.final_position as usize);
     } // end 'outer loop
     println!("DONE phasing long reads! thread {} chrom {}", data.index, data.chrom);
-    // push the last ptative phase block?
     if in_phaseblock {
         putative_phase_blocks.push(PhaseBlock{
             id: putative_phase_blocks.len(),
@@ -571,11 +562,10 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
             end_position: vcf_info.variant_positions[last_attempted_index]
         });
     }
-    // long switch region
+
     let mut new_phaseblock_id: usize = 0;
     for putative_phase_block in putative_phase_blocks {
         let mut cut_blocks = test_long_switch(putative_phase_block.start_index, putative_phase_block.end_index, &mut cluster_centers, &vcf_info, &mut vcf_reader, &data);
-        println!("Final phase block count {}", cut_blocks.len());
         for mut phase_block in cut_blocks {
             phase_block.id = new_phaseblock_id;
             new_phaseblock_id += 1;
@@ -642,45 +632,51 @@ fn test_long_switch(start_index: usize, end_index: usize,
     cluster_centers: &mut Vec<Vec<f32>>, vcf_info: &VCF_info, 
     vcf_reader: &mut bcf::IndexedReader, data: &ThreadData) -> Vec<PhaseBlock> {
     let mut to_return: Vec<PhaseBlock> = Vec::new();
-    /*if data.ploidy > 2 {
-    to_return.push(PhaseBlock{
-        start_index: start_index,
-        start_position: vcf_info.variant_positions[start_index],
-        end_index: end_index + 1,
-        end_position: vcf_info.variant_positions[end_index],
-        id: 0,
-    });
-    return to_return; // currently not doing test_long_switch for polyploid
-    }*/
-    println!("Long switch func starts");
-    //get the possible pairings
+    //if data.ploidy > 2 {
+    //to_return.push(PhaseBlock{
+    //    start_index: start_index,
+    //    start_position: vcf_info.variant_positions[start_index],
+    //    end_index: end_index + 1,
+    //    end_position: vcf_info.variant_positions[end_index],
+    //    id: 0,
+    //});
+    //return to_return; // currently not doing test_long_switch for polyploid
+    //}
+
+
+
     let pairings = pairings(data.ploidy);
-    let log_prior = (1.0 / (pairings.len() as f32)).ln();
-    // get the chrom id in vcf
+    let log_prior = (1.0/(pairings.len() as f32)).ln();
     let chrom = vcf_reader
         .header()
         .name2rid(data.chrom.as_bytes())
         .expect("can't get chrom rid, make sure vcf and bam and fasta contigs match!");
     let mut phase_block_start = start_index;
     let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
-    // using the pairings swap the cluster centers to correct positions
     for pairing in pairings.iter() {
         cluster_center_copies.push(swap_full(&cluster_centers, &pairing));
     }
-    println!("We have {} pairings and {} cc copies {} break points", pairings.len(), cluster_center_copies.len(), (end_index - start_index));
+    let one_million: usize = 1000000;
+    let mut which_million: usize = vcf_info.variant_positions[start_index] / one_million;
     // TODO REALLY THIS TIME URGENT -- if we cut a phaseblock, we need to only test going forward, not read back into old phaseblock
     let mut min_position: u64 = vcf_info.variant_positions[start_index] as u64;
     for breakpoint in start_index..end_index {
         
         let mut log_likelihoods: Vec<f32> = Vec::new();
         let position = vcf_info.variant_positions[breakpoint];
-        // read -15000 from break point and + 15000
+        /*
+        if position / one_million > which_million {
+            println!("{}", position);
+            println!("{} > {} == {}", position / one_million, which_million, position / one_million > which_million);
+            which_million = position / one_million;
+            println!(" which million is now {}", which_million);
+        } 
+        */
         let vcf_fetch_start = (position as u64).checked_sub(15000).unwrap_or(0).max(min_position); // so position - 15000 but not going negative or lower than min_position
-        let vcf_fetch_end = Some(position as u64 + 15000);
+        let vcf_fetch_end = Some(position as u64 + 15000); 
         vcf_reader
             .fetch(chrom, vcf_fetch_start, vcf_fetch_end) // TODO dont hard code things
             .expect("could not fetch in vcf");
-        // get the alleles
         let (molecules, first_var_index, last_var_index) = get_read_molecules(vcf_reader, &vcf_info, READ_TYPE::HIFI);
         for (index, pairing) in pairings.iter().enumerate() {
             // TODO just deleted this, but might need it back
@@ -717,13 +713,13 @@ fn test_long_switch(start_index: usize, end_index: usize,
         let posterior = log_posterior.exp();
         println!("posterior for original {} data.long_switch_threshold {} at breakpoint {} pos {}", posterior, data.long_switch_threshold, breakpoint, position);
         if posterior < data.long_switch_threshold {
-            println!("Broken HERE!");
             // end phase block and add to to_return
+            println!("breaking phaseblock at {}!!!", position);
             to_return.push(PhaseBlock {
                 id: to_return.len(),
                 start_index: phase_block_start,
                 start_position: vcf_info.variant_positions[phase_block_start],
-                end_index: breakpoint + 1,
+                end_index: breakpoint+1,
                 end_position: vcf_info.variant_positions[breakpoint],
             });
             if breakpoint < end_index {
@@ -753,9 +749,6 @@ fn test_long_switch(start_index: usize, end_index: usize,
             //trace!("hap1 {:?}", &cluster_centers[0][breakpoint..(breakpoint+10)]);
             //trace!("hap2 {:?}", &cluster_centers[1][breakpoint..(breakpoint+10)]);
         
-        }
-        else {
-            println!("Not Broken Here!!");
         }
         /*** else {
             let start_position = vcf_info.variant_positions[start_index];
@@ -998,7 +991,7 @@ fn phase_phaseblocks(data: &ThreadData, cluster_centers: &mut Vec<Vec<f32>>,
         //}
         meta_phaseblocks.push(MetaPhaseBlock { id: pb.start_position, phase_blocks: vec![*pb] });// pb.id, phase_blocks: vec![*pb] });
         meta_phaseblock_map.insert(index, MetaPhaseBlock { id: pb.start_position, phase_blocks: vec![*pb]});//pb.id, phase_blocks: vec![*pb] });
-        for allele_id in pb.start_index..(pb.end_index + 1) { 
+        for allele_id in pb.start_index..(pb.end_index+1) { 
             allele_phase_block_id.insert(allele_id, pb.start_position);//first_phaseblock_start); 
         }
     }
@@ -1515,7 +1508,6 @@ enum READ_TYPE {
     HIFI, HIC,
 }
 
-// get the mol which are allele or not for the reads in the window
 fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_type: READ_TYPE) -> (Vec<Vec<Allele>>, usize, usize) {
     let mut molecules: HashMap<String, Vec<Allele>> = HashMap::new();
     let ref_tag;
@@ -1575,7 +1567,7 @@ fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_ty
     }
     let mut to_return: Vec<Vec<Allele>> = Vec::new();
     for (index, (_read_name, alleles)) in molecules.iter().enumerate() {
-        if alleles.len() != 3 {
+        if alleles.len() < 3 {
             continue;
         }
         let mut mol: Vec<Allele> = Vec::new();
@@ -1631,7 +1623,6 @@ fn inspect_vcf(vcf: &mut bcf::IndexedReader, data: &ThreadData) -> VCF_info {
     }
 }
 
-// num if number of variants
 fn init_cluster_centers(num: usize, data: &ThreadData) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
     let seed = [data.seed; 32];
     let mut rng: StdRng = SeedableRng::from_seed(seed);
@@ -1655,21 +1646,17 @@ fn init_cluster_centers(num: usize, data: &ThreadData) -> (Vec<Vec<f32>>, Vec<Ve
 
 fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
     eprintln!("get all variant assignemnts");
-    // open bam
     let mut long_read_bam_reader = match &data.long_read_bam {
         Some(x) => Some(bam::IndexedReader::from_path(x).expect("could not open bam, maybe no index?")),
         None => None,
     };
-    // open hic
     let mut hic_bam_reader = match &data.hic_bam {
         Some(x) => Some(bam::IndexedReader::from_path(x).expect("could not open bam, maybe no index2?")),
         None => None,
     };
-    // open fasta
     let mut fasta = fasta::IndexedReader::from_file(&data.fasta).expect("cannot open fasta file");
-    // open variant file deep consensus?
+
     let mut vcf_reader = bcf::IndexedReader::from_path(data.vcf.to_string()).expect("could not load index for vcf... looking for .csi file");
-    // modify the header of variant file for the new file
     let header_view = vcf_reader.header();
     let mut new_header = bcf::header::Header::from_template(header_view);
     new_header.push_record(br#"##fileformat=VCFv4.2"#);
@@ -1680,7 +1667,7 @@ fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
 
     {
         // creating my own scope to close later to close vcf writer
-        eprintln!("writing vcf {} using {} as header template", data.vcf_out.to_string(), data.vcf.to_string());
+        eprintln!("writing vcf {} using {} as header template",data.vcf_out.to_string(), data.vcf.to_string());
         let mut vcf_writer =
             bcf::Writer::from_path(data.vcf_out.to_string(), &new_header, false, Format::Vcf).expect("cant open vcf writer");
         let chrom = vcf_reader.header().name2rid(data.chrom.as_bytes()).expect("could not read vcf header");
@@ -1754,8 +1741,10 @@ fn copy_vcf_record(new_rec: &mut bcf::record::Record, rec: &bcf::record::Record)
     for filter in rec.filters() {
         new_rec.push_filter(&filter).expect("push filter failed");
     }
+    let mut alleles = rec.alleles();
+    alleles.pop();
     new_rec
-        .set_alleles(&rec.alleles())
+        .set_alleles(&alleles)
         .expect("could not write alleles to new record???");
     new_rec.set_qual(rec.qual());
     let header = rec.header();
@@ -1935,7 +1924,6 @@ fn get_variant_assignments<'a>(
     }
     match long_reads {
         Some(bam) => {
-            // get the read assignment for long read for that location
             let (ref_string, alt_string) = get_read_assignments(chrom.to_string(), pos, bam, 
                 fasta, &ref_allele, &alt_allele, min_base_qual, min_mapq, window);
             vcf_record
@@ -1963,7 +1951,6 @@ fn get_variant_assignments<'a>(
     vcf_writer.write(vcf_record).expect("nope");
 }
 
-// check which of the reads align more to ref or alt, assign the reads as ref of alt
 fn get_read_assignments(
     chrom: String,
     pos: usize,
@@ -1975,12 +1962,10 @@ fn get_read_assignments(
     min_mapq: u8,
     window: usize,
 ) -> (String, String) {
-    // find the chromosone
     let tid = bam
         .header()
         .tid(chrom.as_bytes())
         .expect(&format!("cannot find chrom tid {}", chrom));
-    // search the location in bam
     bam.fetch((tid, pos as u32, (pos + 1) as u32))
         .expect("blah"); // skip to region of bam of this variant position
     let ref_start = (pos.checked_sub(window)).unwrap_or(0) as u64;
@@ -2050,7 +2035,6 @@ fn get_read_assignments(
             //);
             continue;
         }
-        // check which of the reads align more to ref or alt, assign the reads as ref of alt
         let read_start = read_start.expect("why read start is none");
         let seq = rec.seq().as_bytes()[read_start..read_end].to_vec();
         let score = |a: u8, b: u8| if a == b { MATCH } else { MISMATCH };
@@ -2214,7 +2198,6 @@ struct Params {
 }
 
 fn load_params() -> Params {
-    println!("load_params run");
     let yaml = load_yaml!("params.yml");
     let params = App::from_yaml(yaml).get_matches();
 
@@ -2281,9 +2264,6 @@ fn load_params() -> Params {
         start = None;
         end = None;
     }
-
-
-
     Params {
         output: output.to_string(),
         long_read_bam: long_read_bam,
