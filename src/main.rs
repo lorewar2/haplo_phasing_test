@@ -429,16 +429,21 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
             posteriors.push(post);
         }
         while cluster_center_delta > 0.01 {
-            // CONTINUE FROM HERE !!!!!!!!!!!!!!!!!!!
             let (breaking_point, _log_likelihood, posterior_delta) = expectation(&molecules, &cluster_centers, &mut posteriors);
 
             if in_phaseblock && breaking_point {
                 in_phaseblock = false;
-                while cluster_centers[0][last_attempted_index] == 0.5 && 
+                // CHANGED THIS
+                while cluster_centers[0][last_attempted_index] == cluster_centers[1][last_attempted_index] && 
                     vcf_info.variant_positions[last_attempted_index] > window_start {
                     last_attempted_index -= 1;
                 }
-                
+                 // WE CHANGED THIS AFTER PREVIOUS TESTING
+                 if vcf_info.variant_positions[last_attempted_index] < window_start {
+                    last_attempted_index += 1;
+                }
+                // END
+
                 putative_phase_blocks.push(PhaseBlock{
                     id: putative_phase_blocks.len(),
                     start_index: phase_block_start,
@@ -446,9 +451,16 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
                     end_index: last_attempted_index,
                     end_position: vcf_info.variant_positions[last_attempted_index]
                 });
-                
+                //ADDED FROM MAIN
+                phase_block_start = last_attempted_index + 1;
+                if phase_block_start >= vcf_info.variant_positions.len() {
+                    break 'outer;
+                }
+                window_start = vcf_info.variant_positions[phase_block_start];
+                //END
                 phase_block_start = last_attempted_index;
                 last_window_start = Some(window_start);
+
                 if let Some(previous_window_start) = last_window_start {
                     while previous_window_start >= window_start {
                         phase_block_start += 1;
@@ -664,7 +676,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
         let position = vcf_info.variant_positions[breakpoint];
         // read -15000 from break point and + 15000
         let vcf_fetch_start = (position as u64).checked_sub(15000).unwrap_or(0).max(min_position); // so position - 15000 but not going negative or lower than min_position
-        let vcf_fetch_end = Some(position as u64 + 15000); 
+        let vcf_fetch_end = Some(position as u64 + 15000);
         vcf_reader
             .fetch(chrom, vcf_fetch_start, vcf_fetch_end) // TODO dont hard code things
             .expect("could not fetch in vcf");
@@ -837,7 +849,7 @@ fn phase_phaseblocks(data: &ThreadData, cluster_centers: &mut Vec<Vec<f32>>,
         Some(hic) => {}, // if has hic continue as normal
         None => {
             for (id, pb) in phase_blocks.iter().enumerate() {
-                for allele_id in pb.start_index..pb.end_index { 
+                for allele_id in pb.start_index..(pb.end_index + 1) { 
                     allele_phase_block_id.insert(allele_id, pb.start_position); 
                 }    
             }
@@ -986,7 +998,7 @@ fn phase_phaseblocks(data: &ThreadData, cluster_centers: &mut Vec<Vec<f32>>,
         //}
         meta_phaseblocks.push(MetaPhaseBlock { id: pb.start_position, phase_blocks: vec![*pb] });// pb.id, phase_blocks: vec![*pb] });
         meta_phaseblock_map.insert(index, MetaPhaseBlock { id: pb.start_position, phase_blocks: vec![*pb]});//pb.id, phase_blocks: vec![*pb] });
-        for allele_id in pb.start_index..pb.end_index { 
+        for allele_id in pb.start_index..(pb.end_index + 1) { 
             allele_phase_block_id.insert(allele_id, pb.start_position);//first_phaseblock_start); 
         }
     }
@@ -1464,10 +1476,12 @@ fn infer_genotype(cluster_centers: &Vec<Vec<f32>>, index: usize, vcf_info: &VCF_
     let mut genotypes: Vec<GenotypeAllele> = Vec::new();
     let mut phased = true;
     let mut all_point5 = true;
+    let lower = 0.15;
+    let upper = 0.85;
     for haplotype in 0..cluster_centers.len() {
         if cluster_centers[haplotype][index] != 0.5 { all_point5 = false;}
-        if cluster_centers[haplotype][index] > 0.95 {
-        } else if cluster_centers[haplotype][index] < 0.05 {
+        if cluster_centers[haplotype][index] > upper {
+        } else if cluster_centers[haplotype][index] < lower {
         } else { phased = false; }
     }
     if all_point5 {
@@ -1486,9 +1500,9 @@ fn infer_genotype(cluster_centers: &Vec<Vec<f32>>, index: usize, vcf_info: &VCF_
         return genotypes;
     }
     for haplotype in 0..cluster_centers.len() {
-        if cluster_centers[haplotype][index] > 0.95 {
+        if cluster_centers[haplotype][index] > upper {
                 genotypes.push(GenotypeAllele::Phased(1));
-        } else if cluster_centers[haplotype][index] < 0.05 {
+        } else if cluster_centers[haplotype][index] < lower {
                 genotypes.push(GenotypeAllele::Phased(0));
         }    
     }
