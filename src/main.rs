@@ -654,7 +654,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
     for pairing in pairings.iter() {
         cluster_center_copies.push(swap_full(&cluster_centers, &pairing));
     }
-    println!("We have {} pairings and {} cc copies", pairings.len(), cluster_center_copies.len());
+    println!("We have {} pairings and {} cc copies {} break points", pairings.len(), cluster_center_copies.len(), (end_index - start_index));
     // TODO REALLY THIS TIME URGENT -- if we cut a phaseblock, we need to only test going forward, not read back into old phaseblock
     let mut min_position: u64 = vcf_info.variant_positions[start_index] as u64;
     for breakpoint in start_index..end_index {
@@ -686,12 +686,18 @@ fn test_long_switch(start_index: usize, end_index: usize,
             // TODO just deleted this, if we screwed up we might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50); // reversing the swap
         }
+        for (ll_index, log_likelihood) in log_likelihoods.iter().enumerate() {
+            let log_bayes_denom = log_sum_exp(&log_likelihoods);
+            let log_posterior = log_likelihood - log_bayes_denom;
+            let posterior = log_posterior.exp();
+            println!("posterior for pair {}: {}", ll_index, posterior)
+        }
         let log_bayes_denom = log_sum_exp(&log_likelihoods);
         let log_posterior = log_likelihoods[0] - log_bayes_denom;
         let posterior = log_posterior.exp();
-        println!("log likelihoods {:?}", log_likelihoods);
-        print!("posterior {} data.long_switch_threshold {} at breakpoint {} pos {}", posterior, data.long_switch_threshold, breakpoint, position);
+        println!("posterior for original {} data.long_switch_threshold {} at breakpoint {} pos {}", posterior, data.long_switch_threshold, breakpoint, position);
         if posterior < data.long_switch_threshold {
+            println!("Broken HERE!");
             // end phase block and add to to_return
             to_return.push(PhaseBlock {
                 id: to_return.len(),
@@ -727,6 +733,9 @@ fn test_long_switch(start_index: usize, end_index: usize,
             //trace!("hap1 {:?}", &cluster_centers[0][breakpoint..(breakpoint+10)]);
             //trace!("hap2 {:?}", &cluster_centers[1][breakpoint..(breakpoint+10)]);
         
+        }
+        else {
+            println!("Not Broken Here!!");
         }
         /*** else {
             let start_position = vcf_info.variant_positions[start_index];
