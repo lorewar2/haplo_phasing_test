@@ -13,6 +13,7 @@ extern crate log;
 extern crate env_logger;
 extern crate pprof;
 
+use bio::stats::bayesian::model::Posterior;
 use log::{debug, error, log_enabled, info, trace, Level};
 
 use std::sync::mpsc::channel;
@@ -418,6 +419,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         let mut last_cluster_center_delta = cluster_center_delta;
         let mut last_posterior_delta = 0.0;
         info!("next window {}-{}", window_start, window_end);
+        // posteriors just for this window
         let mut posteriors: Vec<Vec<f32>> = Vec::new();
         for moldex in molecules.iter() {
             let mut post: Vec<f32> = Vec::new();
@@ -547,6 +549,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         window_end = window_end.min(vcf_info.final_position as usize);
     } // end 'outer loop
     println!("DONE phasing long reads! thread {} chrom {}", data.index, data.chrom);
+    // push the last ptative phase block?
     if in_phaseblock {
         putative_phase_blocks.push(PhaseBlock{
             id: putative_phase_blocks.len(),
@@ -556,7 +559,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
             end_position: vcf_info.variant_positions[last_attempted_index]
         });
     }
-
+    // long switch region
     let mut new_phaseblock_id: usize = 0;
     for putative_phase_block in putative_phase_blocks {
         let mut cut_blocks = test_long_switch(putative_phase_block.start_index, putative_phase_block.end_index, &mut cluster_centers, &vcf_info, &mut vcf_reader, &data);
@@ -626,7 +629,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
     cluster_centers: &mut Vec<Vec<f32>>, vcf_info: &VCF_info, 
     vcf_reader: &mut bcf::IndexedReader, data: &ThreadData) -> Vec<PhaseBlock> {
     let mut to_return: Vec<PhaseBlock> = Vec::new();
-    if data.ploidy > 2 {
+    /*if data.ploidy > 2 {
     to_return.push(PhaseBlock{
         start_index: start_index,
         start_position: vcf_info.variant_positions[start_index],
@@ -635,42 +638,36 @@ fn test_long_switch(start_index: usize, end_index: usize,
         id: 0,
     });
     return to_return; // currently not doing test_long_switch for polyploid
-    }
-
-
-
+    }*/
+    println!("Long switch func starts");
+    //get the possible pairings
     let pairings = pairings(data.ploidy);
-    let log_prior = (1.0/(pairings.len() as f32)).ln();
+    let log_prior = (1.0 / (pairings.len() as f32)).ln();
+    // get the chrom id in vcf
     let chrom = vcf_reader
         .header()
         .name2rid(data.chrom.as_bytes())
         .expect("can't get chrom rid, make sure vcf and bam and fasta contigs match!");
     let mut phase_block_start = start_index;
     let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
+    // using the pairings swap the cluster centers to correct positions
     for pairing in pairings.iter() {
         cluster_center_copies.push(swap_full(&cluster_centers, &pairing));
     }
-    let one_million: usize = 1000000;
-    let mut which_million: usize = vcf_info.variant_positions[start_index] / one_million;
+    println!("We have {} pairings and {} cc copies", pairings.len(), cluster_center_copies.len());
     // TODO REALLY THIS TIME URGENT -- if we cut a phaseblock, we need to only test going forward, not read back into old phaseblock
     let mut min_position: u64 = vcf_info.variant_positions[start_index] as u64;
     for breakpoint in start_index..end_index {
         
         let mut log_likelihoods: Vec<f32> = Vec::new();
         let position = vcf_info.variant_positions[breakpoint];
-        /*
-        if position / one_million > which_million {
-            println!("{}", position);
-            println!("{} > {} == {}", position / one_million, which_million, position / one_million > which_million);
-            which_million = position / one_million;
-            println!(" which million is now {}", which_million);
-        } 
-        */
+        // read -15000 from break point and + 15000
         let vcf_fetch_start = (position as u64).checked_sub(15000).unwrap_or(0).max(min_position); // so position - 15000 but not going negative or lower than min_position
         let vcf_fetch_end = Some(position as u64 + 15000); 
         vcf_reader
             .fetch(chrom, vcf_fetch_start, vcf_fetch_end) // TODO dont hard code things
             .expect("could not fetch in vcf");
+        // get the alleles
         let (molecules, first_var_index, last_var_index) = get_read_molecules(vcf_reader, &vcf_info, READ_TYPE::HIFI);
         for (index, pairing) in pairings.iter().enumerate() {
             // TODO just deleted this, but might need it back
@@ -692,6 +689,8 @@ fn test_long_switch(start_index: usize, end_index: usize,
         let log_bayes_denom = log_sum_exp(&log_likelihoods);
         let log_posterior = log_likelihoods[0] - log_bayes_denom;
         let posterior = log_posterior.exp();
+        println!("log likelihoods {:?}", log_likelihoods);
+        print!("posterior {} data.long_switch_threshold {} at breakpoint {} pos {}", posterior, data.long_switch_threshold, breakpoint, position);
         if posterior < data.long_switch_threshold {
             // end phase block and add to to_return
             to_return.push(PhaseBlock {
@@ -1545,7 +1544,7 @@ fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_ty
     }
     let mut to_return: Vec<Vec<Allele>> = Vec::new();
     for (index, (_read_name, alleles)) in molecules.iter().enumerate() {
-        if alleles.len() < 2 {
+        if alleles.len() != 3 {
             continue;
         }
         let mut mol: Vec<Allele> = Vec::new();
@@ -1666,7 +1665,7 @@ fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
                     let alleles = rec.alleles();
                     let mut new_rec = vcf_writer.empty_record();
                     copy_vcf_record(&mut new_rec, &rec);
-                    if alleles.len() > 2 {
+                    if alleles.len() != 3 {
                         continue; // ignore multi allelic sites
                     }
                     let reference = std::str::from_utf8(alleles[0]).expect("this really shouldnt fail");
