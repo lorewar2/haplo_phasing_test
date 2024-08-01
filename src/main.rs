@@ -563,6 +563,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
     let mut new_phaseblock_id: usize = 0;
     for putative_phase_block in putative_phase_blocks {
         let mut cut_blocks = test_long_switch(putative_phase_block.start_index, putative_phase_block.end_index, &mut cluster_centers, &vcf_info, &mut vcf_reader, &data);
+        println!("Final phase block count {}", cut_blocks.len());
         for mut phase_block in cut_blocks {
             phase_block.id = new_phaseblock_id;
             new_phaseblock_id += 1;
@@ -686,12 +687,19 @@ fn test_long_switch(start_index: usize, end_index: usize,
             // TODO just deleted this, if we screwed up we might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50); // reversing the swap
         }
+        let mut best_index = 0;
+        let mut best_post = i32::MIN;
         for (ll_index, log_likelihood) in log_likelihoods.iter().enumerate() {
             let log_bayes_denom = log_sum_exp(&log_likelihoods);
             let log_posterior = log_likelihood - log_bayes_denom;
             let posterior = log_posterior.exp();
-            println!("posterior for pair {}: {}", ll_index, posterior)
+            println!("posterior for pair {}: {}", ll_index, posterior);
+            if posterior > best_post {
+                best_post = posterior;
+                best_index = ll_index;
+            }
         }
+        println!("Best pair {} value {}", best_index, best_post);
         let log_bayes_denom = log_sum_exp(&log_likelihoods);
         let log_posterior = log_likelihoods[0] - log_bayes_denom;
         let posterior = log_posterior.exp();
@@ -703,7 +711,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
                 id: to_return.len(),
                 start_index: phase_block_start,
                 start_position: vcf_info.variant_positions[phase_block_start],
-                end_index: breakpoint+1,
+                end_index: breakpoint + 1,
                 end_position: vcf_info.variant_positions[breakpoint],
             });
             if breakpoint < end_index {
