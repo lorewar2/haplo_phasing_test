@@ -702,6 +702,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
             let log_posterior = log_likelihood - log_bayes_denom;
             let posterior = log_posterior.exp();
             println!("posterior for pair {}: {}", ll_index, posterior);
+            println!("pairing {:?}", pairing);
             if posterior > best_post {
                 best_post = posterior;
                 best_index = ll_index;
