@@ -710,7 +710,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
                 println!("{} - {}", pairings[ll_index][2].0, pairings[ll_index][2].1);
                 println!("{} - {}", pairings[ll_index][3].0, pairings[ll_index][3].1);
             }
-            else if (data.ploidy == 2) {
+            else if data.ploidy == 2 {
                 println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
                 println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
             }
@@ -1580,10 +1580,10 @@ fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_ty
     }
     let mut to_return: Vec<Vec<Allele>> = Vec::new();
     for (index, (_read_name, alleles)) in molecules.iter().enumerate() {
-        if polyploid == 2 && alleles.len() != 2 {
+        if ploidy == 2 && alleles.len() != 2 {
             continue;
         }
-        else if polyploid == 3 && alleles.len() != 3 {
+        else if ploidy == 3 && alleles.len() != 3 {
             continue;
         }
         let mut mol: Vec<Allele> = Vec::new();
@@ -1761,7 +1761,7 @@ fn copy_vcf_record(new_rec: &mut bcf::record::Record, rec: &bcf::record::Record)
         new_rec.push_filter(&filter).expect("push filter failed");
     }
     if rec.alleles().len() > 2 {
-        let mut alleles = rec.alleles().len();
+        let mut alleles = rec.alleles();
         alleles.pop(); //remove the last empty allle for polypolid
         new_rec
         .set_alleles(&alleles)
