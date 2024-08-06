@@ -402,7 +402,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         vcf_reader
             .fetch(chrom, window_start as u64, Some(window_end as u64))
             .expect("some actual error");
-        let (molecules, first_var_index, last_var_index) = get_read_molecules(&mut vcf_reader, &vcf_info, READ_TYPE::HIFI);
+        let (molecules, first_var_index, last_var_index) = get_read_molecules(&mut vcf_reader, &vcf_info, READ_TYPE::HIFI, data.ploidy);
         let mut iteration = 0;
         let mut min_index: usize = 0;
         let mut max_index: usize = 0;
@@ -677,7 +677,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
         vcf_reader
             .fetch(chrom, vcf_fetch_start, vcf_fetch_end) // TODO dont hard code things
             .expect("could not fetch in vcf");
-        let (molecules, first_var_index, last_var_index) = get_read_molecules(vcf_reader, &vcf_info, READ_TYPE::HIFI);
+        let (molecules, first_var_index, last_var_index) = get_read_molecules( vcf_reader, &vcf_info, READ_TYPE::HIFI, data.ploidy);
         for (index, pairing) in pairings.iter().enumerate() {
             // TODO just deleted this, but might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50);
@@ -695,20 +695,32 @@ fn test_long_switch(start_index: usize, end_index: usize,
             // TODO just deleted this, if we screwed up we might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50); // reversing the swap
         }
+        // debug posteriors
         let mut best_index = 0;
         let mut best_post = f32::MIN;
         for (ll_index, log_likelihood) in log_likelihoods.iter().enumerate() {
             let log_bayes_denom = log_sum_exp(&log_likelihoods);
             let log_posterior = log_likelihood - log_bayes_denom;
             let posterior = log_posterior.exp();
-            println!("posterior for pair {}: {}", ll_index, posterior);
-            println!("pairing {:?}", pairing);
+            println!("posterior for pair {} VVV: {}", ll_index, posterior);
+            // print the pairing
+            if data.ploidy == 4 {
+                println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
+                println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
+                println!("{} - {}", pairings[ll_index][2].0, pairings[ll_index][2].1);
+                println!("{} - {}", pairings[ll_index][3].0, pairings[ll_index][3].1);
+            }
+            else if (data.ploidy == 2) {
+                println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
+                println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
+            }
             if posterior > best_post {
                 best_post = posterior;
                 best_index = ll_index;
             }
         }
         println!("Best pair {} value {}", best_index, best_post);
+        // posterior calculation for pair 0
         let log_bayes_denom = log_sum_exp(&log_likelihoods);
         let log_posterior = log_likelihoods[0] - log_bayes_denom;
         let posterior = log_posterior.exp();
@@ -863,7 +875,7 @@ fn phase_phaseblocks(data: &ThreadData, cluster_centers: &mut Vec<Vec<f32>>,
     vcf_reader
         .fetch(chrom, data.start as u64, Some(data.end as u64))
         .expect("some actual error");
-    let (hic_reads, _, _) = get_read_molecules(&mut vcf_reader, &vcf_info, READ_TYPE::HIC);
+    let (hic_reads, _, _) = get_read_molecules(&mut vcf_reader, &vcf_info, READ_TYPE::HIC, data.ploidy);
     println!("{} hic reads hitting > 1 variant", hic_reads.len());
 
     // Okay what do I really want? Maybe a map from (pb1_id, pb2_id) to a map from (allele1, allele2) to counts array????
@@ -1509,7 +1521,7 @@ enum READ_TYPE {
     HIFI, HIC,
 }
 
-fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_type: READ_TYPE) -> (Vec<Vec<Allele>>, usize, usize) {
+fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_type: READ_TYPE, ploidy: usize) -> (Vec<Vec<Allele>>, usize, usize) {
     let mut molecules: HashMap<String, Vec<Allele>> = HashMap::new();
     let ref_tag;
     let alt_tag;
@@ -1568,7 +1580,10 @@ fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_ty
     }
     let mut to_return: Vec<Vec<Allele>> = Vec::new();
     for (index, (_read_name, alleles)) in molecules.iter().enumerate() {
-        if alleles.len() < 3 {
+        if polyploid == 2 && alleles.len() != 2 {
+            continue;
+        }
+        else if polyploid == 3 && alleles.len() != 3 {
             continue;
         }
         let mut mol: Vec<Allele> = Vec::new();
@@ -1684,8 +1699,11 @@ fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
                     let alleles = rec.alleles();
                     let mut new_rec = vcf_writer.empty_record();
                     copy_vcf_record(&mut new_rec, &rec);
-                    if alleles.len() != 3 {
-                        continue; // ignore multi allelic sites
+                    if data.ploidy == 2 && alleles.len() != 2 {
+                        continue;
+                    }
+                    else if data.ploidy == 3 && alleles.len() != 3 {
+                        continue;
                     }
                     let reference = std::str::from_utf8(alleles[0]).expect("this really shouldnt fail");
                     let alternative = std::str::from_utf8(alleles[1]). expect("this really shouldnt fail2");
@@ -1742,11 +1760,18 @@ fn copy_vcf_record(new_rec: &mut bcf::record::Record, rec: &bcf::record::Record)
     for filter in rec.filters() {
         new_rec.push_filter(&filter).expect("push filter failed");
     }
-    let mut alleles = rec.alleles();
-    alleles.pop();
-    new_rec
+    if rec.alleles().len() > 2 {
+        let mut alleles = rec.alleles().len();
+        alleles.pop(); //remove the last empty allle for polypolid
+        new_rec
         .set_alleles(&alleles)
         .expect("could not write alleles to new record???");
+    }
+    else {
+        new_rec
+        .set_alleles(&rec.alleles())
+        .expect("could not write alleles to new record???");
+    }
     new_rec.set_qual(rec.qual());
     let header = rec.header();
     for header_record in header.header_records() {
