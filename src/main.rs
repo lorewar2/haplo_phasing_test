@@ -13,6 +13,7 @@ extern crate log;
 extern crate env_logger;
 extern crate pprof;
 
+use flate2::write;
 use log::{debug, error, log_enabled, info, trace, Level};
 
 use std::sync::mpsc::channel;
@@ -52,6 +53,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use crate::statrs::distribution::DiscreteCDF;
+use std::fs::OpenOptions;
 
 use hashbrown::{HashMap, HashSet};
 use std::collections::BinaryHeap;
@@ -698,26 +700,52 @@ fn test_long_switch(start_index: usize, end_index: usize,
         // debug posteriors
         let mut best_index = 0;
         let mut best_post = f32::MIN;
+        let mut write_strings = vec![];
         for (ll_index, log_likelihood) in log_likelihoods.iter().enumerate() {
             let log_bayes_denom = log_sum_exp(&log_likelihoods);
             let log_posterior = log_likelihood - log_bayes_denom;
             let posterior = log_posterior.exp();
-            println!("posterior for pair {} VVV: {}", ll_index, posterior);
-            // print the pairing
-            if data.ploidy == 4 {
-                println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
-                println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
-                println!("{} - {}", pairings[ll_index][2].0, pairings[ll_index][2].1);
-                println!("{} - {}", pairings[ll_index][3].0, pairings[ll_index][3].1);
-            }
-            else if data.ploidy == 2 {
-                println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
-                println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
+            if posterior > 0.01 {
+                println!("posterior for pair {} VVV: {}", ll_index, posterior);
+                // print the pairing
+                if data.ploidy == 4 {
+                    println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
+                    println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
+                    println!("{} - {}", pairings[ll_index][2].0, pairings[ll_index][2].1);
+                    println!("{} - {}", pairings[ll_index][3].0, pairings[ll_index][3].1);
+                    write_strings.push(format!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1));
+                    write_strings.push(format!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1));
+                    write_strings.push(format!("{} - {}", pairings[ll_index][2].0, pairings[ll_index][2].1));
+                    write_strings.push(format!("{} - {}", pairings[ll_index][3].0, pairings[ll_index][3].1));
+                }
+                else if data.ploidy == 2 {
+                    println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
+                    println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
+                }
             }
             if posterior > best_post {
                 best_post = posterior;
                 best_index = ll_index;
             }
+        }
+        // write to file
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open("posteriors.txt")
+            .unwrap();
+        
+        if let Err(e) = writeln!(file, ">{}", position) {
+            eprintln!("Couldn't write to file: {}", e);
+        }
+        for write_string in write_strings {
+            if let Err(e) = writeln!(file, "{}", write_string) {
+                eprintln!("Couldn't write to file: {}", e);
+            }
+        }
+        if let Err(e) = writeln!(file, "best pair {} value {}", best_index, best_post) {
+            eprintln!("Couldn't write to file: {}", e);
         }
         println!("Best pair {} value {}", best_index, best_post);
         // posterior calculation for pair 0
