@@ -1580,10 +1580,7 @@ fn get_read_molecules(vcf: &mut bcf::IndexedReader, vcf_info: &VCF_info, read_ty
     }
     let mut to_return: Vec<Vec<Allele>> = Vec::new();
     for (index, (_read_name, alleles)) in molecules.iter().enumerate() {
-        if ploidy == 2 && alleles.len() != 2 {
-            continue;
-        }
-        else if ploidy == 3 && alleles.len() != 3 {
+        if alleles.len() < 2 {
             continue;
         }
         let mut mol: Vec<Allele> = Vec::new();
@@ -1699,10 +1696,10 @@ fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
                     let alleles = rec.alleles();
                     let mut new_rec = vcf_writer.empty_record();
                     copy_vcf_record(&mut new_rec, &rec);
-                    if data.ploidy == 2 && alleles.len() != 2 {
+                    if data.ploidy == 2 && alleles.len() > 2 {
                         continue;
                     }
-                    else if data.ploidy == 3 && alleles.len() != 3 {
+                    else if data.ploidy == 3 && alleles.len() > 3 {
                         continue;
                     }
                     let reference = std::str::from_utf8(alleles[0]).expect("this really shouldnt fail");
