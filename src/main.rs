@@ -684,7 +684,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
             // TODO just deleted this, but might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50);
             //swap_copied(&mut cluster_center_copies[index], breakpoint, &pairing);
-            let new_cluster_centers = swap_and_return_fixed(&cluster_centers, &cluster_centers_copy[index], breakpoint);
+            let new_cluster_centers = swap_and_return_fixed(&cluster_centers, &cluster_center_copies[index], breakpoint);
             let mut posteriors: Vec<Vec<f32>> = Vec::new();
             for moldex in molecules.iter() {
                 let mut post: Vec<f32> = Vec::new();
@@ -806,7 +806,7 @@ fn swap_and_return_fixed(cluster_centers: &Vec<Vec<f32>>, cluster_centers_copy: 
     // until breakpoint normal after breakpoint swapped
     for i in breakpoint..cluster_centers[0].len() {
         for hap in 0..cluster_centers.len() {
-            cluster_centers_new[hap1][i] = cluster_centers_copy[hap1][i]
+            cluster_centers_new[hap][i] = cluster_centers_copy[hap][i]
         }
     }
     return cluster_centers_new;
