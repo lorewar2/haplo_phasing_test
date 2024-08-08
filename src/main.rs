@@ -679,20 +679,21 @@ fn test_long_switch(start_index: usize, end_index: usize,
         vcf_reader
             .fetch(chrom, vcf_fetch_start, vcf_fetch_end) // TODO dont hard code things
             .expect("could not fetch in vcf");
-        let (molecules, first_var_index, last_var_index) = get_read_molecules( vcf_reader, &vcf_info, READ_TYPE::HIFI, data.ploidy);
+        let (molecules, first_var_index, last_var_index) = get_read_molecules(vcf_reader, &vcf_info, READ_TYPE::HIFI, data.ploidy);
         for (index, pairing) in pairings.iter().enumerate() {
             // TODO just deleted this, but might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50);
-            swap_copied(&mut cluster_center_copies[index], breakpoint, &pairing);
+            //swap_copied(&mut cluster_center_copies[index], breakpoint, &pairing);
+            let new_cluster_centers = swap_and_return_fixed(&cluster_centers, &cluster_centers_copy[index], breakpoint);
             let mut posteriors: Vec<Vec<f32>> = Vec::new();
             for moldex in molecules.iter() {
                 let mut post: Vec<f32> = Vec::new();
-                for hap in cluster_centers.iter() {
+                for hap in new_cluster_centers.iter() {
                     post.push(0.0);
                 }
                 posteriors.push(post);
             }
-            let (_break, log_likelihood, post_delta) = expectation(&molecules, &cluster_center_copies[index], &mut posteriors);
+            let (_break, log_likelihood, post_delta) = expectation(&molecules, &new_cluster_centers, &mut posteriors);
             log_likelihoods.push(log_likelihood + log_prior);
             // TODO just deleted this, if we screwed up we might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50); // reversing the swap
@@ -700,7 +701,6 @@ fn test_long_switch(start_index: usize, end_index: usize,
         // debug posteriors
         let mut best_index = 0;
         let mut best_post = f32::MIN;
-        let mut write_strings = vec![];
         for (ll_index, log_likelihood) in log_likelihoods.iter().enumerate() {
             let log_bayes_denom = log_sum_exp(&log_likelihoods);
             let log_posterior = log_likelihood - log_bayes_denom;
@@ -713,10 +713,6 @@ fn test_long_switch(start_index: usize, end_index: usize,
                     println!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1);
                     println!("{} - {}", pairings[ll_index][2].0, pairings[ll_index][2].1);
                     println!("{} - {}", pairings[ll_index][3].0, pairings[ll_index][3].1);
-                    write_strings.push(format!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1));
-                    write_strings.push(format!("{} - {}", pairings[ll_index][1].0, pairings[ll_index][1].1));
-                    write_strings.push(format!("{} - {}", pairings[ll_index][2].0, pairings[ll_index][2].1));
-                    write_strings.push(format!("{} - {}", pairings[ll_index][3].0, pairings[ll_index][3].1));
                 }
                 else if data.ploidy == 2 {
                     println!("{} - {}", pairings[ll_index][0].0, pairings[ll_index][0].1);
@@ -727,25 +723,6 @@ fn test_long_switch(start_index: usize, end_index: usize,
                 best_post = posterior;
                 best_index = ll_index;
             }
-        }
-        // write to file
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open("posteriors.txt")
-            .unwrap();
-        
-        if let Err(e) = writeln!(file, ">{}", position) {
-            eprintln!("Couldn't write to file: {}", e);
-        }
-        for write_string in write_strings {
-            if let Err(e) = writeln!(file, "{}", write_string) {
-                eprintln!("Couldn't write to file: {}", e);
-            }
-        }
-        if let Err(e) = writeln!(file, "best pair {} value {}", best_index, best_post) {
-            eprintln!("Couldn't write to file: {}", e);
         }
         println!("Best pair {} value {}", best_index, best_post);
         // posterior calculation for pair 0
@@ -822,6 +799,17 @@ fn test_long_switch(start_index: usize, end_index: usize,
         });
     }
     to_return
+}
+
+fn swap_and_return_fixed(cluster_centers: &Vec<Vec<f32>>, cluster_centers_copy: &Vec<Vec<f32>>, breakpoint: usize) -> Vec<Vec<f32>> {
+    let mut cluster_centers_new = cluster_centers.clone();
+    // until breakpoint normal after breakpoint swapped
+    for i in breakpoint..cluster_centers[0].len() {
+        for hap in 0..cluster_centers.len() {
+            cluster_centers_new[hap1][i] = cluster_centers_copy[hap1][i]
+        }
+    }
+    return cluster_centers_new;
 }
 
 fn swap_copied(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>) {
