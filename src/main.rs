@@ -823,7 +823,7 @@ fn get_a_small_part (cluster_centers: &Vec<Vec<f32>>, breakpoint: usize) -> Vec<
     for hap in 0..cluster_centers.len() {
         let mut one_hap = vec![];
         for i in breakpoint - 5.. breakpoint + 5 {
-            one_hap.push(cluster_centers_new[hap][i]);
+            one_hap.push(cluster_centers[hap][i]);
         }
         cluster_centers_small.push(one_hap);
     }
