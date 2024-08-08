@@ -680,22 +680,36 @@ fn test_long_switch(start_index: usize, end_index: usize,
             .fetch(chrom, vcf_fetch_start, vcf_fetch_end) // TODO dont hard code things
             .expect("could not fetch in vcf");
         let (molecules, first_var_index, last_var_index) = get_read_molecules(vcf_reader, &vcf_info, READ_TYPE::HIFI, data.ploidy);
+        let mut small_molecule_section = vec![(0, 0); 10]; // ref alt
+        for (moldex, molecule) in molecules.iter().enumerate() {
+                for allele in molecule.iter() {
+                    if (allele.index >= breakpoint - 5) && (allele.index < breakpoint + 5) {
+                        if allele.allele {
+                            small_molecule_section[allele.index - breakpoint + 5].1 += 1;
+                        }   
+                        else {
+                            small_molecule_section[allele.index - breakpoint + 5].0 += 1;
+                        }  
+                    }
+                }
+        }
         let mut cluster_centers_for_display = vec![];
         for (index, pairing) in pairings.iter().enumerate() {
             // TODO just deleted this, but might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50);
-            //swap_copied(&mut cluster_center_copies[index], breakpoint, &pairing);
-            let (new_cluster_centers, small_cluster) = swap_and_return_fixed(&cluster_centers, &cluster_center_copies[index], breakpoint);
+            swap_copied(&mut cluster_center_copies[index], breakpoint, &pairing);
+            //let (new_cluster_centers, small_cluster) = swap_and_return_fixed(&cluster_centers, &cluster_center_copies[index], breakpoint);
+            let small_cluster = get_a_small_part (&cluster_center_copies[index], breakpoint);
             cluster_centers_for_display.push(small_cluster);
             let mut posteriors: Vec<Vec<f32>> = Vec::new();
             for moldex in molecules.iter() {
                 let mut post: Vec<f32> = Vec::new();
-                for hap in new_cluster_centers.iter() {
+                for hap in cluster_center_copies[index].iter() {
                     post.push(0.0);
                 }
                 posteriors.push(post);
             }
-            let (_break, log_likelihood, post_delta) = expectation(&molecules, &new_cluster_centers, &mut posteriors);
+            let (_break, log_likelihood, post_delta) = expectation(&molecules, &cluster_center_copies[index], &mut posteriors);
             log_likelihoods.push(log_likelihood + log_prior);
             // TODO just deleted this, if we screwed up we might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50); // reversing the swap
@@ -711,14 +725,15 @@ fn test_long_switch(start_index: usize, end_index: usize,
                 println!("posterior for pair {} VVV: {}", ll_index, posterior);
                 // print the pairing
                 if data.ploidy == 4 {
-                    println!("{} - {} {:?}", pairings[ll_index][0].0, pairings[ll_index][0].1, cluster_centers_for_display[ll_index][0]);
-                    println!("{} - {} {:?}", pairings[ll_index][1].0, pairings[ll_index][1].1, cluster_centers_for_display[ll_index][1]);
-                    println!("{} - {} {:?}", pairings[ll_index][2].0, pairings[ll_index][2].1, cluster_centers_for_display[ll_index][2]);
-                    println!("{} - {} {:?}", pairings[ll_index][3].0, pairings[ll_index][3].1, cluster_centers_for_display[ll_index][3]);
+                    println!("\t\t\t\t\t\tref alt reads {:?}", small_molecule_section);
+                    println!("{:.3} - {:.3} {:?}", pairings[ll_index][0].0, pairings[ll_index][0].1, cluster_centers_for_display[ll_index][0]);
+                    println!("{:.3} - {:.3} {:?}", pairings[ll_index][1].0, pairings[ll_index][1].1, cluster_centers_for_display[ll_index][1]);
+                    println!("{:.3} - {:.3} {:?}", pairings[ll_index][2].0, pairings[ll_index][2].1, cluster_centers_for_display[ll_index][2]);
+                    println!("{:.3} - {:.3} {:?}", pairings[ll_index][3].0, pairings[ll_index][3].1, cluster_centers_for_display[ll_index][3]);
                 }
                 else if data.ploidy == 2 {
-                    println!("{} - {} {:?}", pairings[ll_index][0].0, pairings[ll_index][0].1, cluster_centers_for_display[ll_index][0]);
-                    println!("{} - {} {:?}", pairings[ll_index][1].0, pairings[ll_index][1].1, cluster_centers_for_display[ll_index][1]);
+                    println!("{:.3} - {:.3} {:?}", pairings[ll_index][0].0, pairings[ll_index][0].1, cluster_centers_for_display[ll_index][0]);
+                    println!("{:.3} - {:.3} {:?}", pairings[ll_index][1].0, pairings[ll_index][1].1, cluster_centers_for_display[ll_index][1]);
                 }
             }
             if posterior > best_post {
@@ -801,6 +816,18 @@ fn test_long_switch(start_index: usize, end_index: usize,
         });
     }
     to_return
+}
+
+fn get_a_small_part (cluster_centers: &Vec<Vec<f32>>, breakpoint: usize) -> Vec<Vec<f32>> {
+    let mut cluster_centers_small = vec![];
+    for hap in 0..cluster_centers.len() {
+        let mut one_hap = vec![];
+        for i in breakpoint - 5.. breakpoint + 5 {
+            one_hap.push(cluster_centers_new[hap][i]);
+        }
+        cluster_centers_small.push(one_hap);
+    }
+    return cluster_centers_small;
 }
 
 fn swap_and_return_fixed(cluster_centers: &Vec<Vec<f32>>, cluster_centers_copy: &Vec<Vec<f32>>, breakpoint: usize) -> (Vec<Vec<f32>>, Vec<Vec<f32>>){
