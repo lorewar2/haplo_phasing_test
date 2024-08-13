@@ -68,7 +68,8 @@ const GAP_OPEN: i32 = -4; // Gap open score
 const GAP_EXTEND: i32 = -2; // Gap extend score
 
 fn main() {
-    env_logger::init();
+    swap_tester();
+    /*env_logger::init();
     let guard = pprof::ProfilerGuard::new(100).unwrap();
 
     let result = _main();
@@ -89,7 +90,7 @@ fn main() {
 
         println!("If you think this is bug in Phasstphase, please file a bug at https://github.com/wheaton5/phasstphase, and include the information above and the command-line you used.");
         std::process::exit(1)
-    }
+    }*/
 }
 
 fn _main() -> Result<(), Error> {
@@ -816,6 +817,31 @@ fn test_long_switch(start_index: usize, end_index: usize,
         });
     }
     to_return
+}
+
+fn swap_tester() {
+    // make the cluster centers hap1 0.1, hap2, 0.2, hap3, 0.3, hap4, 0.4
+    let mut cluster_centers:Vec<Vec<f32>> = vec![];
+    cluster_centers.push(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    cluster_centers.push(vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]);
+    cluster_centers.push(vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
+    cluster_centers.push(vec![0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3]);
+    // polypoid test
+    let pairings = pairings(4);
+    let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
+    for (index, pairing) in pairings.iter().enumerate() {
+        let temp_cluster = swap_full_fixed(&cluster_centers, &pairing);
+        println!("{:.3} - {:.3} {:?}", pairing[0].0, pairing[0].1, temp_cluster[0]);
+        println!("{:.3} - {:.3} {:?}", pairing[1].0, pairing[1].1, temp_cluster[1]);
+        println!("{:.3} - {:.3} {:?}", pairing[2].0, pairing[2].1, temp_cluster[2]);
+        println!("{:.3} - {:.3} {:?}", pairing[3].0, pairing[3].1, temp_cluster[3]);
+        cluster_center_copies.push(temp_cluster);
+    }
+    for breakpoint in 5..7 {
+        for (index, pairing) in pairings.iter().enumerate() {
+            swap_copied_fixed(&mut cluster_center_copies[index], breakpoint, &pairing);
+        }
+    }
 }
 
 fn get_a_small_part (cluster_centers: &Vec<Vec<f32>>, breakpoint: usize) -> Vec<Vec<f32>> {
