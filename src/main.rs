@@ -877,6 +877,26 @@ fn swap_full(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> 
     cluster_centers_copy
 }
 
+fn swap_full_fixed(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
+    let mut cluster_centers_copy = cluster_centers.clone();
+    let mut tracker = [0, 1, 2, 3].to_vec();
+    for (hap1, hap2) in pairing {
+        //when we swap hap2 keep track of where it is
+        // hap 1 is in hap2
+        // hap2 is in hap1
+        let temp_hap = tracker[*hap1];
+        tracker[*hap1] = tracker[*hap2];
+        tracker[*hap2] = temp_hap;
+        // use tracker instead of hap1 and hap2
+        for i in 0..cluster_centers[0].len() {
+            let tmp = cluster_centers[*hap1][i];
+            cluster_centers_copy[*hap1][i] = cluster_centers[*hap2][i];
+            cluster_centers_copy[*hap2][i] = tmp;            
+        }
+    }
+    cluster_centers_copy
+}
+
 fn swap(cluster_centers: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>, length: usize) {
     let mut touched = [false;32];
     for (hap1, hap2) in pairing {
