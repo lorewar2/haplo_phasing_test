@@ -861,6 +861,38 @@ fn swap_copied(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pair
     }
 }
 
+fn swap_copied_fixed(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>) {
+    // we start with the ascending order
+    let mut tracker = [0, 1, 2, 3].to_vec();
+    for (hap1, hap2) in pairing {
+        // use tracker instead of hap2
+        let swap_hap1 = *hap1;
+        let swap_hap2 = tracker[*hap2];
+        //if same do nothing
+        if swap_hap1 != swap_hap2 {
+            let tmp = cluster_centers_copy[swap_hap1][breakpoint];
+            cluster_centers_copy[swap_hap1][breakpoint] = cluster_centers_copy[swap_hap2][breakpoint];
+            cluster_centers_copy[swap_hap2][breakpoint] = tmp;
+            // go through the tracker and find the indices of swap_hap1 and swap_hap2
+            let mut index_swap1 = 0;
+            let mut index_swap2 = 0;
+            for (index, hap)  in tracker.iter().enumerate() {
+                if swap_hap1 == *hap {
+                    index_swap1 = index;
+                }
+                if swap_hap2 == *hap {
+                    index_swap2 = index;
+                }
+            }
+            // update tracker
+            let temp_hap = tracker[index_swap1];
+            tracker[index_swap1] = tracker[index_swap2];
+            tracker[index_swap2] = temp_hap;
+        }
+        
+    }
+}
+
 fn swap_full(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
     let mut cluster_centers_copy = cluster_centers.clone();
     let mut touched = [false;32];
@@ -879,19 +911,34 @@ fn swap_full(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> 
 
 fn swap_full_fixed(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
     let mut cluster_centers_copy = cluster_centers.clone();
+    // we start with the ascending order
     let mut tracker = [0, 1, 2, 3].to_vec();
     for (hap1, hap2) in pairing {
-        //when we swap hap2 keep track of where it is
-        // hap 1 is in hap2
-        // hap2 is in hap1
-        let temp_hap = tracker[*hap1];
-        tracker[*hap1] = tracker[*hap2];
-        tracker[*hap2] = temp_hap;
-        // use tracker instead of hap1 and hap2
-        for i in 0..cluster_centers[0].len() {
-            let tmp = cluster_centers[*hap1][i];
-            cluster_centers_copy[*hap1][i] = cluster_centers[*hap2][i];
-            cluster_centers_copy[*hap2][i] = tmp;            
+        // use tracker instead of hap2
+        let swap_hap1 = *hap1;
+        let swap_hap2 = tracker[*hap2];
+        //if same do nothing
+        if swap_hap1 != swap_hap2 {
+            for i in 0..cluster_centers[0].len() {
+                let tmp = cluster_centers[*hap1][i];
+                cluster_centers_copy[*hap1][i] = cluster_centers[*hap2][i];
+                cluster_centers_copy[*hap2][i] = tmp;            
+            }
+            // go through the tracker and find the indices of swap_hap1 and swap_hap2
+            let mut index_swap1 = 0;
+            let mut index_swap2 = 0;
+            for (index, hap)  in tracker.iter().enumerate() {
+                if swap_hap1 == *hap {
+                    index_swap1 = index;
+                }
+                if swap_hap2 == *hap {
+                    index_swap2 = index;
+                }
+            }
+            // update tracker
+            let temp_hap = tracker[index_swap1];
+            tracker[index_swap1] = tracker[index_swap2];
+            tracker[index_swap2] = temp_hap;
         }
     }
     cluster_centers_copy
