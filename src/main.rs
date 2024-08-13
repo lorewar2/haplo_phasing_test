@@ -946,9 +946,9 @@ fn swap_full_fixed(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)
         //if same do nothing
         if swap_hap1 != swap_hap2 {
             for i in 0..cluster_centers[0].len() {
-                let tmp = cluster_centers[*hap1][i];
-                cluster_centers_copy[*hap1][i] = cluster_centers[*hap2][i];
-                cluster_centers_copy[*hap2][i] = tmp;            
+                let tmp = cluster_centers_copy[swap_hap1][i];
+                cluster_centers_copy[swap_hap1][i] = cluster_centers_copy[swap_hap2][i];
+                cluster_centers_copy[swap_hap2][i] = tmp;            
             }
             // go through the tracker and find the indices of swap_hap1 and swap_hap2
             let mut index_swap1 = 0;
