@@ -68,8 +68,8 @@ const GAP_OPEN: i32 = -4; // Gap open score
 const GAP_EXTEND: i32 = -2; // Gap extend score
 
 fn main() {
-    swap_tester();
-    /*env_logger::init();
+    //swap_tester(); //turn off swap tester
+    env_logger::init();
     let guard = pprof::ProfilerGuard::new(100).unwrap();
 
     let result = _main();
@@ -90,7 +90,7 @@ fn main() {
 
         println!("If you think this is bug in Phasstphase, please file a bug at https://github.com/wheaton5/phasstphase, and include the information above and the command-line you used.");
         std::process::exit(1)
-    }*/
+    }
 }
 
 fn _main() -> Result<(), Error> {
@@ -657,7 +657,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
     let mut phase_block_start = start_index;
     let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
     for pairing in pairings.iter() {
-        cluster_center_copies.push(swap_full(&cluster_centers, &pairing));
+        cluster_center_copies.push(swap_full_fixed(&cluster_centers, &pairing));
     }
     let one_million: usize = 1000000;
     let mut which_million: usize = vcf_info.variant_positions[start_index] / one_million;
@@ -698,7 +698,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
         for (index, pairing) in pairings.iter().enumerate() {
             // TODO just deleted this, but might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50);
-            swap_copied(&mut cluster_center_copies[index], breakpoint, &pairing);
+            swap_copied_fixed(&mut cluster_center_copies[index], breakpoint, &pairing);
             //let (new_cluster_centers, small_cluster) = swap_and_return_fixed(&cluster_centers, &cluster_center_copies[index], breakpoint);
             let small_cluster = get_a_small_part (&cluster_center_copies[index], breakpoint);
             cluster_centers_for_display.push(small_cluster);
@@ -818,174 +818,6 @@ fn test_long_switch(start_index: usize, end_index: usize,
     }
     to_return
 }
-
-fn swap_tester() {
-    // make the cluster centers hap1 0.1, hap2, 0.2, hap3, 0.3, hap4, 0.4
-    let mut cluster_centers:Vec<Vec<f32>> = vec![];
-    cluster_centers.push(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-    cluster_centers.push(vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]);
-    cluster_centers.push(vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
-    cluster_centers.push(vec![0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3]);
-    // polypoid test
-    let pairings = pairings(4);
-    let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
-    for (index, pairing) in pairings.iter().enumerate() {
-        let temp_cluster = swap_full_fixed(&cluster_centers, &pairing);
-        println!("{:.3} - {:.3} {:?}", pairing[0].0, pairing[0].1, temp_cluster[0]);
-        println!("{:.3} - {:.3} {:?}", pairing[1].0, pairing[1].1, temp_cluster[1]);
-        println!("{:.3} - {:.3} {:?}", pairing[2].0, pairing[2].1, temp_cluster[2]);
-        println!("{:.3} - {:.3} {:?}", pairing[3].0, pairing[3].1, temp_cluster[3]);
-        cluster_center_copies.push(temp_cluster);
-    }
-    for breakpoint in 5..7 {
-        for (index, pairing) in pairings.iter().enumerate() {
-            swap_copied_fixed(&mut cluster_center_copies[index], breakpoint, &pairing);
-        }
-    }
-}
-
-fn get_a_small_part (cluster_centers: &Vec<Vec<f32>>, breakpoint: usize) -> Vec<Vec<f32>> {
-    let mut cluster_centers_small = vec![];
-    for hap in 0..cluster_centers.len() {
-        let mut one_hap = vec![];
-        for i in breakpoint - 5.. breakpoint + 5 {
-            one_hap.push(cluster_centers[hap][i]);
-        }
-        cluster_centers_small.push(one_hap);
-    }
-    return cluster_centers_small;
-}
-
-fn swap_and_return_fixed(cluster_centers: &Vec<Vec<f32>>, cluster_centers_copy: &Vec<Vec<f32>>, breakpoint: usize) -> (Vec<Vec<f32>>, Vec<Vec<f32>>){
-    let mut cluster_centers_new = cluster_centers.clone();
-    // until breakpoint normal after breakpoint swapped
-    for i in breakpoint..cluster_centers[0].len() {
-        for hap in 0..cluster_centers.len() {
-            cluster_centers_new[hap][i] = cluster_centers_copy[hap][i]
-        }
-    }
-    let mut cluster_centers_small = vec![];
-    for hap in 0..cluster_centers.len() {
-        let mut one_hap = vec![];
-        for i in breakpoint - 5.. breakpoint + 5 {
-            one_hap.push(cluster_centers_new[hap][i]);
-        }
-        cluster_centers_small.push(one_hap);
-    }
-    return (cluster_centers_new, cluster_centers_small);
-}
-
-fn swap_copied(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>) {
-    let mut touched = [false;32];
-    for (hap1, hap2) in pairing {
-        if touched[*hap1] {continue;}
-        touched[*hap1] = true;
-        touched[*hap2] = true;
-        let tmp = cluster_centers_copy[*hap1][breakpoint];
-        cluster_centers_copy[*hap1][breakpoint] = cluster_centers_copy[*hap2][breakpoint];
-        cluster_centers_copy[*hap2][breakpoint] = tmp;
-    }
-}
-
-fn swap_copied_fixed(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>) {
-    // we start with the ascending order
-    let mut tracker = [0, 1, 2, 3].to_vec();
-    for (hap1, hap2) in pairing {
-        // use tracker instead of hap2
-        let swap_hap1 = *hap1;
-        let swap_hap2 = tracker[*hap2];
-        //if same do nothing
-        if swap_hap1 != swap_hap2 {
-            let tmp = cluster_centers_copy[swap_hap1][breakpoint];
-            cluster_centers_copy[swap_hap1][breakpoint] = cluster_centers_copy[swap_hap2][breakpoint];
-            cluster_centers_copy[swap_hap2][breakpoint] = tmp;
-            // go through the tracker and find the indices of swap_hap1 and swap_hap2
-            let mut index_swap1 = 0;
-            let mut index_swap2 = 0;
-            for (index, hap)  in tracker.iter().enumerate() {
-                if swap_hap1 == *hap {
-                    index_swap1 = index;
-                }
-                if swap_hap2 == *hap {
-                    index_swap2 = index;
-                }
-            }
-            // update tracker
-            let temp_hap = tracker[index_swap1];
-            tracker[index_swap1] = tracker[index_swap2];
-            tracker[index_swap2] = temp_hap;
-        }
-        
-    }
-}
-
-fn swap_full(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
-    let mut cluster_centers_copy = cluster_centers.clone();
-    let mut touched = [false;32];
-    for (hap1, hap2) in pairing {
-        if touched[*hap1]  { continue; }
-        touched[*hap1] = true;
-        touched[*hap2] = true;
-        for i in 0..cluster_centers[0].len() {
-            let tmp = cluster_centers[*hap1][i];
-            cluster_centers_copy[*hap1][i] = cluster_centers[*hap2][i];
-            cluster_centers_copy[*hap2][i] = tmp;            
-        }
-    }
-    cluster_centers_copy
-}
-
-fn swap_full_fixed(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
-    let mut cluster_centers_copy = cluster_centers.clone();
-    // we start with the ascending order
-    let mut tracker = [0, 1, 2, 3].to_vec();
-    for (hap1, hap2) in pairing {
-        // use tracker instead of hap2
-        let swap_hap1 = *hap1;
-        let swap_hap2 = tracker[*hap2];
-        //if same do nothing
-        if swap_hap1 != swap_hap2 {
-            for i in 0..cluster_centers[0].len() {
-                let tmp = cluster_centers_copy[swap_hap1][i];
-                cluster_centers_copy[swap_hap1][i] = cluster_centers_copy[swap_hap2][i];
-                cluster_centers_copy[swap_hap2][i] = tmp;            
-            }
-            // go through the tracker and find the indices of swap_hap1 and swap_hap2
-            let mut index_swap1 = 0;
-            let mut index_swap2 = 0;
-            for (index, hap)  in tracker.iter().enumerate() {
-                if swap_hap1 == *hap {
-                    index_swap1 = index;
-                }
-                if swap_hap2 == *hap {
-                    index_swap2 = index;
-                }
-            }
-            // update tracker
-            let temp_hap = tracker[index_swap1];
-            tracker[index_swap1] = tracker[index_swap2];
-            tracker[index_swap2] = temp_hap;
-        }
-    }
-    cluster_centers_copy
-}
-
-fn swap(cluster_centers: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>, length: usize) {
-    let mut touched = [false;32];
-    for (hap1, hap2) in pairing {
-        if touched[*hap1]  { continue; }
-        touched[*hap1] = true;
-        touched[*hap2] = true;
-        for locus in (breakpoint+1)..(breakpoint+1+length) {
-            if locus < cluster_centers[0].len() {
-                let tmp = cluster_centers[*hap1][locus];
-                cluster_centers[*hap1][locus] = cluster_centers[*hap2][locus];
-                cluster_centers[*hap2][locus] = tmp;
-            }
-        }
-    }
-}
-
 
 fn phase_phaseblocks(data: &ThreadData, cluster_centers: &mut Vec<Vec<f32>>, 
     phase_blocks: &Vec<PhaseBlock>, vcf_info: &VCF_info) -> HashMap<usize, usize> {
@@ -2451,5 +2283,173 @@ fn load_params() -> Params {
         chrom: chrom,
         start: start,
         end: end,
+    }
+}
+
+
+fn swap_tester() {
+    // make the cluster centers hap1 0.1, hap2, 0.2, hap3, 0.3, hap4, 0.4
+    let mut cluster_centers:Vec<Vec<f32>> = vec![];
+    cluster_centers.push(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    cluster_centers.push(vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]);
+    cluster_centers.push(vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
+    cluster_centers.push(vec![0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3]);
+    // polypoid test
+    let pairings = pairings(4);
+    let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
+    for (index, pairing) in pairings.iter().enumerate() {
+        let temp_cluster = swap_full_fixed(&cluster_centers, &pairing);
+        println!("{:.3} - {:.3} {:?}", pairing[0].0, pairing[0].1, temp_cluster[0]);
+        println!("{:.3} - {:.3} {:?}", pairing[1].0, pairing[1].1, temp_cluster[1]);
+        println!("{:.3} - {:.3} {:?}", pairing[2].0, pairing[2].1, temp_cluster[2]);
+        println!("{:.3} - {:.3} {:?}", pairing[3].0, pairing[3].1, temp_cluster[3]);
+        cluster_center_copies.push(temp_cluster);
+    }
+    for breakpoint in 5..7 {
+        for (index, pairing) in pairings.iter().enumerate() {
+            swap_copied_fixed(&mut cluster_center_copies[index], breakpoint, &pairing);
+        }
+    }
+}
+
+fn get_a_small_part (cluster_centers: &Vec<Vec<f32>>, breakpoint: usize) -> Vec<Vec<f32>> {
+    let mut cluster_centers_small = vec![];
+    for hap in 0..cluster_centers.len() {
+        let mut one_hap = vec![];
+        for i in breakpoint - 5.. breakpoint + 5 {
+            one_hap.push(cluster_centers[hap][i]);
+        }
+        cluster_centers_small.push(one_hap);
+    }
+    return cluster_centers_small;
+}
+
+fn swap_and_return_fixed(cluster_centers: &Vec<Vec<f32>>, cluster_centers_copy: &Vec<Vec<f32>>, breakpoint: usize) -> (Vec<Vec<f32>>, Vec<Vec<f32>>){
+    let mut cluster_centers_new = cluster_centers.clone();
+    // until breakpoint normal after breakpoint swapped
+    for i in breakpoint..cluster_centers[0].len() {
+        for hap in 0..cluster_centers.len() {
+            cluster_centers_new[hap][i] = cluster_centers_copy[hap][i]
+        }
+    }
+    let mut cluster_centers_small = vec![];
+    for hap in 0..cluster_centers.len() {
+        let mut one_hap = vec![];
+        for i in breakpoint - 5.. breakpoint + 5 {
+            one_hap.push(cluster_centers_new[hap][i]);
+        }
+        cluster_centers_small.push(one_hap);
+    }
+    return (cluster_centers_new, cluster_centers_small);
+}
+
+fn swap_copied(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>) {
+    let mut touched = [false;32];
+    for (hap1, hap2) in pairing {
+        if touched[*hap1] {continue;}
+        touched[*hap1] = true;
+        touched[*hap2] = true;
+        let tmp = cluster_centers_copy[*hap1][breakpoint];
+        cluster_centers_copy[*hap1][breakpoint] = cluster_centers_copy[*hap2][breakpoint];
+        cluster_centers_copy[*hap2][breakpoint] = tmp;
+    }
+}
+
+fn swap_copied_fixed(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>) {
+    // we start with the ascending order
+    let mut tracker = [0, 1, 2, 3].to_vec();
+    for (hap1, hap2) in pairing {
+        // use tracker instead of hap2
+        let swap_hap1 = *hap1;
+        let swap_hap2 = tracker[*hap2];
+        //if same do nothing
+        if swap_hap1 != swap_hap2 {
+            let tmp = cluster_centers_copy[swap_hap1][breakpoint];
+            cluster_centers_copy[swap_hap1][breakpoint] = cluster_centers_copy[swap_hap2][breakpoint];
+            cluster_centers_copy[swap_hap2][breakpoint] = tmp;
+            // go through the tracker and find the indices of swap_hap1 and swap_hap2
+            let mut index_swap1 = 0;
+            let mut index_swap2 = 0;
+            for (index, hap)  in tracker.iter().enumerate() {
+                if swap_hap1 == *hap {
+                    index_swap1 = index;
+                }
+                if swap_hap2 == *hap {
+                    index_swap2 = index;
+                }
+            }
+            // update tracker
+            let temp_hap = tracker[index_swap1];
+            tracker[index_swap1] = tracker[index_swap2];
+            tracker[index_swap2] = temp_hap;
+        }
+        
+    }
+}
+
+fn swap_full(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
+    let mut cluster_centers_copy = cluster_centers.clone();
+    let mut touched = [false;32];
+    for (hap1, hap2) in pairing {
+        if touched[*hap1]  { continue; }
+        touched[*hap1] = true;
+        touched[*hap2] = true;
+        for i in 0..cluster_centers[0].len() {
+            let tmp = cluster_centers[*hap1][i];
+            cluster_centers_copy[*hap1][i] = cluster_centers[*hap2][i];
+            cluster_centers_copy[*hap2][i] = tmp;            
+        }
+    }
+    cluster_centers_copy
+}
+
+fn swap_full_fixed(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
+    let mut cluster_centers_copy = cluster_centers.clone();
+    // we start with the ascending order
+    let mut tracker = [0, 1, 2, 3].to_vec();
+    for (hap1, hap2) in pairing {
+        // use tracker instead of hap2
+        let swap_hap1 = *hap1;
+        let swap_hap2 = tracker[*hap2];
+        //if same do nothing
+        if swap_hap1 != swap_hap2 {
+            for i in 0..cluster_centers[0].len() {
+                let tmp = cluster_centers_copy[swap_hap1][i];
+                cluster_centers_copy[swap_hap1][i] = cluster_centers_copy[swap_hap2][i];
+                cluster_centers_copy[swap_hap2][i] = tmp;            
+            }
+            // go through the tracker and find the indices of swap_hap1 and swap_hap2
+            let mut index_swap1 = 0;
+            let mut index_swap2 = 0;
+            for (index, hap)  in tracker.iter().enumerate() {
+                if swap_hap1 == *hap {
+                    index_swap1 = index;
+                }
+                if swap_hap2 == *hap {
+                    index_swap2 = index;
+                }
+            }
+            // update tracker
+            let temp_hap = tracker[index_swap1];
+            tracker[index_swap1] = tracker[index_swap2];
+            tracker[index_swap2] = temp_hap;
+        }
+    }
+    cluster_centers_copy
+}
+
+fn swap(cluster_centers: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>, length: usize) {
+    let mut touched = [false;32];
+    for (hap1, hap2) in pairing {
+        if touched[*hap1]  { continue; }
+        touched[*hap1] = true;
+        touched[*hap2] = true;
+        for locus in (breakpoint+1)..(breakpoint+1+length) {
+            if locus < cluster_centers[0].len() {
+                let tmp = cluster_centers[*hap1][locus];
+                cluster_centers[*hap1][locus] = cluster_centers[*hap2][locus];
+                cluster_centers[*hap2][locus] = tmp;
+            }
+        }
     }
 }
