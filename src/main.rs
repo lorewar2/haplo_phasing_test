@@ -16,6 +16,7 @@ extern crate pprof;
 use flate2::write;
 use log::{debug, error, log_enabled, info, trace, Level};
 
+use std::char::ToLowercase;
 use std::sync::mpsc::channel;
 use std::thread::Thread;
 
@@ -2041,10 +2042,18 @@ fn get_read_assignments(
         let seq = rec.seq().as_bytes()[read_start..read_end].to_vec();
         let score = |a: u8, b: u8| if a == b { MATCH } else { MISMATCH };
         let mut aligner = banded::Aligner::new(GAP_OPEN, GAP_EXTEND, score, K, W);
-        let ref_alignment = aligner.semiglobal(&seq, &ref_sequence);
-        let alt_alignment = aligner.semiglobal(&seq, &alt_sequence);
+        let ref_alignment = aligner.semiglobal(&seq, &String::from_utf8_lossy(&ref_sequence).to_uppercase().as_bytes().to_vec());
+        let alt_alignment = aligner.semiglobal(&seq, &String::from_utf8_lossy(&alt_sequence).to_uppercase().as_bytes().to_vec());
         total += 1.0;
-        println!("ref score {} alt score {}", ref_alignment.score, alt_alignment.score);
+        for i in 0..(window + padding as usize){
+            //print!("A");
+        }
+        //println!("");
+        //println!("{}", String::from_utf8_lossy(&ref_sequence).to_uppercase());
+        //println!("{}", String::from_utf8_lossy(&alt_sequence).to_uppercase());
+        //println!("{}", String::from_utf8_lossy(&seq));
+        //println!("ref score {} alt score {}", ref_alignment.score, alt_alignment.score);
+        //println!("ref score {} alt score {}", ref_alignment.score, alt_alignment.score);
         if ref_alignment.score > alt_alignment.score {
             read_names_ref.push(std::str::from_utf8(rec.qname()).expect("wtff").replace(":","_").replace(";","-").to_string());
         } else if alt_alignment.score > ref_alignment.score {
