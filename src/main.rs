@@ -1677,7 +1677,7 @@ fn get_all_variant_assignments(data: &ThreadData) -> Result<(), Error> {
                     if data.ploidy == 2 && alleles.len() > 2 {
                         continue;
                     }
-                    else if data.ploidy == 3 && alleles.len() > 3 {
+                    else if data.ploidy == 4 && alleles.len() > 3 {
                         continue;
                     }
                     let reference = std::str::from_utf8(alleles[0]).expect("this really shouldnt fail");
@@ -1969,6 +1969,7 @@ fn get_read_assignments(
         .expect(&format!("cannot find chrom tid {}", chrom));
     bam.fetch((tid, pos as u32, (pos + 1) as u32))
         .expect("blah"); // skip to region of bam of this variant position
+    println!("Starting processing location {}", pos);
     let ref_start = (pos.checked_sub(window)).unwrap_or(0) as u64;
     let ref_end = (pos.checked_add(window).unwrap_or(pos).checked_add(ref_allele.len())).unwrap_or(pos) as u64;
     let padding = 15;
@@ -2043,6 +2044,7 @@ fn get_read_assignments(
         let ref_alignment = aligner.semiglobal(&seq, &ref_sequence);
         let alt_alignment = aligner.semiglobal(&seq, &alt_sequence);
         total += 1.0;
+        println!("ref score {} alt score {}", ref_alignment.score, alt_alignment.score);
         if ref_alignment.score > alt_alignment.score {
             read_names_ref.push(std::str::from_utf8(rec.qname()).expect("wtff").replace(":","_").replace(";","-").to_string());
         } else if alt_alignment.score > ref_alignment.score {
@@ -2058,6 +2060,7 @@ fn get_read_assignments(
         read_names_ref = Vec::new();
         read_names_alt = Vec::new();
     }
+    println!("total {} amb {}", total, ambiguous_count);
     let concat_ref = read_names_ref.join(";");
     let concat_alt = read_names_alt.join(";");
     (concat_ref, concat_alt)
