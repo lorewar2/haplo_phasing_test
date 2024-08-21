@@ -636,16 +636,16 @@ fn test_long_switch(start_index: usize, end_index: usize,
     cluster_centers: &mut Vec<Vec<f32>>, vcf_info: &VCF_info, 
     vcf_reader: &mut bcf::IndexedReader, data: &ThreadData) -> Vec<PhaseBlock> {
     let mut to_return: Vec<PhaseBlock> = Vec::new();
-    //if data.ploidy > 2 {
-    //to_return.push(PhaseBlock{
-    //    start_index: start_index,
-    //    start_position: vcf_info.variant_positions[start_index],
-    //    end_index: end_index + 1,
-    //    end_position: vcf_info.variant_positions[end_index],
-    //    id: 0,
-    //});
-    //return to_return; // currently not doing test_long_switch for polyploid
-    //}
+    if data.ploidy > 2 {
+        to_return.push(PhaseBlock{
+            start_index: start_index,
+            start_position: vcf_info.variant_positions[start_index],
+            end_index: end_index + 1,
+            end_position: vcf_info.variant_positions[end_index],
+            id: 0,
+        });
+        return to_return; // currently not doing test_long_switch for polyploid
+    }
 
 
 
