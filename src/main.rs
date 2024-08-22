@@ -2371,9 +2371,11 @@ fn swap_copied_fixed(original_cluster_centers: &Vec<Vec<f32>>, breakpoint: usize
         //if same do nothing
         if swap_hap1 != swap_hap2 {
             for i in breakpoint..breakpoint + length_swap {
-                let tmp = cluster_centers_copy[swap_hap1][i];
-                cluster_centers_copy[swap_hap1][i] = cluster_centers_copy[swap_hap2][i];
-                cluster_centers_copy[swap_hap2][i] = tmp;            
+                if cluster_centers_copy[swap_hap1].len() > i {
+                    let tmp = cluster_centers_copy[swap_hap1][i];
+                    cluster_centers_copy[swap_hap1][i] = cluster_centers_copy[swap_hap2][i];
+                    cluster_centers_copy[swap_hap2][i] = tmp;  
+                }
             }
             // go through the tracker and find the indices of swap_hap1 and swap_hap2
             let mut index_swap1 = 0;
