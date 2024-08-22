@@ -69,8 +69,8 @@ const GAP_OPEN: i32 = -4; // Gap open score
 const GAP_EXTEND: i32 = -2; // Gap extend score
 
 fn main() {
-    swap_tester(); //turn off swap tester
-    /*env_logger::init();
+    //swap_tester(); //turn off swap tester
+    env_logger::init();
     let guard = pprof::ProfilerGuard::new(100).unwrap();
 
     let result = _main();
@@ -91,7 +91,7 @@ fn main() {
 
         println!("If you think this is bug in Phasstphase, please file a bug at https://github.com/wheaton5/phasstphase, and include the information above and the command-line you used.");
         std::process::exit(1)
-    }*/
+    }
 }
 
 fn _main() -> Result<(), Error> {
@@ -2375,9 +2375,6 @@ fn swap_copied_fixed(original_cluster_centers: &Vec<Vec<f32>>, breakpoint: usize
                 cluster_centers_copy[swap_hap1][i] = cluster_centers_copy[swap_hap2][i];
                 cluster_centers_copy[swap_hap2][i] = tmp;            
             }
-            let tmp = cluster_centers_copy[swap_hap1][breakpoint];
-            cluster_centers_copy[swap_hap1][breakpoint] = cluster_centers_copy[swap_hap2][breakpoint];
-            cluster_centers_copy[swap_hap2][breakpoint] = tmp;
             // go through the tracker and find the indices of swap_hap1 and swap_hap2
             let mut index_swap1 = 0;
             let mut index_swap2 = 0;
