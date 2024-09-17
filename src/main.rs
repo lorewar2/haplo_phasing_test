@@ -55,6 +55,7 @@ use std::io::Write;
 use std::path::Path;
 use crate::statrs::distribution::DiscreteCDF;
 use std::fs::OpenOptions;
+use std::time::Instant;
 
 use hashbrown::{HashMap, HashSet};
 use std::collections::BinaryHeap;
@@ -72,7 +73,7 @@ fn main() {
     //swap_tester(); //turn off swap tester
     env_logger::init();
     let guard = pprof::ProfilerGuard::new(100).unwrap();
-
+    let now = Instant::now();
     let result = _main();
     if let Ok(report) = guard.report().build() {
         let file = File::create("flamegraph.svg").unwrap();
@@ -92,6 +93,7 @@ fn main() {
         println!("If you think this is bug in Phasstphase, please file a bug at https://github.com/wheaton5/phasstphase, and include the information above and the command-line you used.");
         std::process::exit(1)
     }
+    println!("Time elapsed {}", now.elapsed().as_micros() as usize);
 }
 
 fn _main() -> Result<(), Error> {
