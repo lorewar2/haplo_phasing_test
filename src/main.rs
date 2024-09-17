@@ -365,6 +365,7 @@ fn log_sum_exp64(p: &Vec<f64>) -> f64 {
 }
 
 fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
+    let now = Instant::now();
     println!("checking for file {}", data.phased_vcf_done);
     if Path::new(&data.phased_vcf_done).exists() {
         println!("phasing complete for chrom {}. Delete .done or output directory if you want to rerun", data.chrom);
@@ -631,6 +632,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         .expect("bcftools failed us");
     fs::File::create(data.phased_vcf_done.to_string()).expect("cant create .done file. are the permissions wrong?");
     println!("thread {} chrom {}finished", data.index, data.chrom);
+    println!("chr {} Time elapsed {}", data.chrom, now.elapsed().as_micros() as usize);
     Ok(())
 }
 
