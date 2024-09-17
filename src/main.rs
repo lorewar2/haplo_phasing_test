@@ -638,7 +638,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
     cluster_centers: &mut Vec<Vec<f32>>, vcf_info: &VCF_info, 
     vcf_reader: &mut bcf::IndexedReader, data: &ThreadData) -> Vec<PhaseBlock> {
     let mut to_return: Vec<PhaseBlock> = Vec::new();
-    if data.ploidy > 2 {
+    /*if data.ploidy > 2 {
         to_return.push(PhaseBlock{
             start_index: start_index,
             start_position: vcf_info.variant_positions[start_index],
@@ -647,10 +647,7 @@ fn test_long_switch(start_index: usize, end_index: usize,
             id: 0,
         });
         return to_return; // currently not doing test_long_switch for polyploid
-    }
-
-
-
+    }*/
     let pairings = pairings(data.ploidy);
     let log_prior = (1.0/(pairings.len() as f32)).ln();
     let chrom = vcf_reader
@@ -658,16 +655,15 @@ fn test_long_switch(start_index: usize, end_index: usize,
         .name2rid(data.chrom.as_bytes())
         .expect("can't get chrom rid, make sure vcf and bam and fasta contigs match!");
     let mut phase_block_start = start_index;
-    let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
-    for pairing in pairings.iter() {
-        cluster_center_copies.push(swap_full_fixed(&cluster_centers, &pairing));
-    }
+    //let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
+    //for pairing in pairings.iter() {
+        //cluster_center_copies.push(swap_full_fixed(&cluster_centers, &pairing));
+    //}
     let one_million: usize = 1000000;
     let mut which_million: usize = vcf_info.variant_positions[start_index] / one_million;
     // TODO REALLY THIS TIME URGENT -- if we cut a phaseblock, we need to only test going forward, not read back into old phaseblock
     let mut min_position: u64 = vcf_info.variant_positions[start_index] as u64;
     for breakpoint in start_index..end_index {
-        
         let mut log_likelihoods: Vec<f32> = Vec::new();
         let position = vcf_info.variant_positions[breakpoint];
         /*
@@ -701,19 +697,19 @@ fn test_long_switch(start_index: usize, end_index: usize,
         for (index, pairing) in pairings.iter().enumerate() {
             // TODO just deleted this, but might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50);
-            swap_copied_fixed(&mut cluster_center_copies[index], breakpoint, &pairing);
+            let cluster_center_modified = swap_copied_fixed(&cluster_centers, breakpoint, &pairing, 100);
             //let (new_cluster_centers, small_cluster) = swap_and_return_fixed(&cluster_centers, &cluster_center_copies[index], breakpoint);
-            let small_cluster = get_a_small_part (&cluster_center_copies[index], breakpoint);
+            let small_cluster = get_a_small_part(&cluster_center_modified, breakpoint);
             cluster_centers_for_display.push(small_cluster);
             let mut posteriors: Vec<Vec<f32>> = Vec::new();
             for moldex in molecules.iter() {
                 let mut post: Vec<f32> = Vec::new();
-                for hap in cluster_center_copies[index].iter() {
+                for hap in cluster_center_modified.iter() {
                     post.push(0.0);
                 }
                 posteriors.push(post);
             }
-            let (_break, log_likelihood, post_delta) = expectation(&molecules, &cluster_center_copies[index], &mut posteriors);
+            let (_break, log_likelihood, post_delta) = expectation(&molecules, &cluster_center_modified, &mut posteriors);
             log_likelihoods.push(log_likelihood + log_prior);
             // TODO just deleted this, if we screwed up we might need it back
             //swap(cluster_centers, breakpoint, &pairing, 50); // reversing the swap
@@ -2310,18 +2306,13 @@ fn swap_tester() {
     cluster_centers.push(vec![0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3]);
     // polypoid test
     let pairings = pairings(4);
-    let mut cluster_center_copies: Vec<Vec<Vec<f32>>> = Vec::new(); // pairings by cluster center copies
-    for (index, pairing) in pairings.iter().enumerate() {
-        let temp_cluster = swap_full_fixed(&cluster_centers, &pairing);
-        println!("{:.3} - {:.3} {:?}", pairing[0].0, pairing[0].1, temp_cluster[0]);
-        println!("{:.3} - {:.3} {:?}", pairing[1].0, pairing[1].1, temp_cluster[1]);
-        println!("{:.3} - {:.3} {:?}", pairing[2].0, pairing[2].1, temp_cluster[2]);
-        println!("{:.3} - {:.3} {:?}", pairing[3].0, pairing[3].1, temp_cluster[3]);
-        cluster_center_copies.push(temp_cluster);
-    }
     for breakpoint in 5..7 {
         for (index, pairing) in pairings.iter().enumerate() {
-            swap_copied_fixed(&mut cluster_center_copies[index], breakpoint, &pairing);
+            let temp_cluster = swap_copied_fixed(&cluster_centers, breakpoint, &pairing, 2);
+            println!("{:.3} - {:.3} {:?}", pairing[0].0, pairing[0].1, temp_cluster[0]);
+            println!("{:.3} - {:.3} {:?}", pairing[1].0, pairing[1].1, temp_cluster[1]);
+            println!("{:.3} - {:.3} {:?}", pairing[2].0, pairing[2].1, temp_cluster[2]);
+            println!("{:.3} - {:.3} {:?}\n", pairing[3].0, pairing[3].1, temp_cluster[3]);
         }
     }
 }
@@ -2371,7 +2362,8 @@ fn swap_copied(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pair
     }
 }
 
-fn swap_copied_fixed(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>) {
+fn swap_copied_fixed(original_cluster_centers: &Vec<Vec<f32>>, breakpoint: usize, pairing: &Vec<(usize, usize)>, length_swap: usize) -> Vec<Vec<f32>> {
+    let mut cluster_centers_copy = original_cluster_centers.clone();
     // we start with the ascending order
     let mut tracker = [0, 1, 2, 3].to_vec();
     for (hap1, hap2) in pairing {
@@ -2380,9 +2372,13 @@ fn swap_copied_fixed(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize
         let swap_hap2 = tracker[*hap2];
         //if same do nothing
         if swap_hap1 != swap_hap2 {
-            let tmp = cluster_centers_copy[swap_hap1][breakpoint];
-            cluster_centers_copy[swap_hap1][breakpoint] = cluster_centers_copy[swap_hap2][breakpoint];
-            cluster_centers_copy[swap_hap2][breakpoint] = tmp;
+            for i in breakpoint..breakpoint + length_swap {
+                if cluster_centers_copy[swap_hap1].len() > i {
+                    let tmp = cluster_centers_copy[swap_hap1][i];
+                    cluster_centers_copy[swap_hap1][i] = cluster_centers_copy[swap_hap2][i];
+                    cluster_centers_copy[swap_hap2][i] = tmp;  
+                }
+            }
             // go through the tracker and find the indices of swap_hap1 and swap_hap2
             let mut index_swap1 = 0;
             let mut index_swap2 = 0;
@@ -2399,8 +2395,8 @@ fn swap_copied_fixed(cluster_centers_copy: &mut Vec<Vec<f32>>, breakpoint: usize
             tracker[index_swap1] = tracker[index_swap2];
             tracker[index_swap2] = temp_hap;
         }
-        
     }
+    return cluster_centers_copy;
 }
 
 fn swap_full(cluster_centers: &Vec<Vec<f32>>, pairing: &Vec<(usize, usize)>) -> Vec<Vec<f32>> {
