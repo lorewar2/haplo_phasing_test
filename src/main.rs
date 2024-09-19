@@ -93,7 +93,7 @@ fn main() {
         println!("If you think this is bug in Phasstphase, please file a bug at https://github.com/wheaton5/phasstphase, and include the information above and the command-line you used.");
         std::process::exit(1)
     }
-    println!("Time elapsed {}", now.elapsed().as_micros() as usize);
+    println!("Total time elapsed {}", now.elapsed().as_micros() as usize);
 }
 
 fn _main() -> Result<(), Error> {
@@ -632,7 +632,7 @@ fn phase_chunk(data: &ThreadData) -> Result<(), Error> {
         .expect("bcftools failed us");
     fs::File::create(data.phased_vcf_done.to_string()).expect("cant create .done file. are the permissions wrong?");
     println!("thread {} chrom {}finished", data.index, data.chrom);
-    println!("chr {} Time elapsed {}", data.chrom, now.elapsed().as_micros() as usize);
+    println!("Chr {} Time elapsed {} thread {}", data.chrom, now.elapsed().as_micros() as usize, data.index);
     Ok(())
 }
 
